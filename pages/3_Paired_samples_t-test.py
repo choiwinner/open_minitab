@@ -4,6 +4,8 @@ from dash.dependencies import Input, Output, State
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
+import pandas as pd
+import plotly.express as px
 from scipy import stats
 
 register_page(__name__)
@@ -285,10 +287,13 @@ def update_paired_sample_analysis(n_clicks, data_string_1, data_string_2, null_h
 
     # --- Plotly 그래프 생성 (차이에 대한 그래프) ---
     fig = make_subplots(
-        rows=1, cols=2,
+        rows=2, cols=2,
         subplot_titles=(
-            "차이의 히스토그램 (Fitted Normal Distribution)", "차이의 정규 확률도 (Normal Probability Plot)"
-        )
+            "차이의 히스토그램 (Fitted Normal Distribution)", "차이의 정규 확률도 (Normal Probability Plot)",
+            "데이터 비교 박스 플롯 (Box Plot)", 
+            f"차이의 분포 및 {conf_level_float}% 신뢰 구간"
+        ),
+        vertical_spacing=0.15
     )
 
     # 히스토그램
@@ -311,11 +316,75 @@ def update_paired_sample_analysis(n_clicks, data_string_1, data_string_2, null_h
     fig.update_yaxes(title_text="차이 값 (Ordered Values)", row=1, col=2)
     fig.update_xaxes(title_text="이론적 분위수 (Theoretical Quantiles)", row=1, col=2)
 
+    # Box Plot for comparing two samples
+    # This is the box plot for Sample 1 and Sample 2, not the differences
+    df_box = pd.DataFrame({
+        'Value': np.concatenate([data1, data2]),
+        'Sample': ['Sample 1'] * len(data1) + ['Sample 2'] * len(data2)
+    })
+    box_fig = px.box(df_box, x='Sample', y='Value', color='Sample',
+                     color_discrete_map={'Sample 1': '#007BFF', 'Sample 2': '#28A745'})
+    for trace in box_fig.data:
+        fig.add_trace(trace, row=2, col=1)
+    fig.update_yaxes(title_text="데이터 값", row=2, col=1)
+    fig.update_xaxes(title_text="", row=2, col=1)
+
+    # Confidence Interval Plot for the difference
+    if not np.isnan(ci_diff[0]):
+        # Box plot of the differences
+        fig.add_trace(go.Box(
+            x=differences,
+            y=['차이 분포'] * len(differences), # Assign to a y-category
+            name='차이 데이터 분포',
+            orientation='h', # Horizontal box plot
+            marker_color='#636EFA',
+            boxpoints='all', # Show all points
+            jitter=0.3, # Jitter for points
+            pointpos=-1.8, # Position of points relative to the box
+            boxmean=False, # Do not show mean from box plot, we'll add it explicitly
+            showlegend=False
+        ), row=2, col=2)
+
+        # Minitab 스타일로 신뢰구간을 x축에 표시
+        fig.add_trace(go.Scatter(
+            x=[mean_diff],
+            y=['평균 차이'], # Use a different y-category to separate from the box plot
+            error_x=dict(
+                type='data',
+                symmetric=False,
+                array=[ci_diff[1] - mean_diff],
+                arrayminus=[mean_diff - ci_diff[0]],
+                thickness=1.5,
+                color='#EF553B'
+            ),
+            mode='markers',
+            marker=dict(size=14, color='red', symbol='circle', line=dict(width=2, color='DarkSlateGrey')),
+            name=f'{conf_level_float}% CI of Mean Diff',
+        ), row=2, col=2)
+
+        # 신뢰구간 양 끝에 텍스트 추가 (add_annotation 사용)
+        fig.add_annotation(x=ci_diff[0], y='평균 차이', text=f"{ci_diff[0]:.4f}",
+                           showarrow=False, yshift=-20, font=dict(color="black"), row=2, col=2)
+        fig.add_annotation(x=ci_diff[1], y='평균 차이', text=f"{ci_diff[1]:.4f}",
+                           showarrow=False, yshift=-20, font=dict(color="black"), row=2, col=2)
+
+        # Add a vertical line at x=0 for reference
+        fig.add_vline(x=0, line_dash="dot", line_color="green",
+                      annotation=dict(
+                          text="차이 = 0",
+                          font=dict(color="green")
+                      ),
+                      annotation_position="top right",
+                      row=2, col=2)
+
+    fig.update_yaxes(title_text="", row=2, col=2) # Show y-axis labels
+    fig.update_xaxes(title_text="차이 값 (Data1 - Data2)", row=2, col=2)
+
     fig.update_layout(
         title_text=f"<b>차이의 정규성 검정 결과</b><br>(Shapiro-Wilk P-value: {f'{shapiro_p:.4f}' if shapiro_p is not None else 'N/A'})",
         title_x=0.5,
         showlegend=False,
-        height=500,
+        height=800, # Increased height for 2x2 plots
         bargap=0.01
     )
 

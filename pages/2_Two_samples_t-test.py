@@ -5,6 +5,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 from scipy import stats
+import plotly.express as px
+import pandas as pd
 
 register_page(__name__)
 
@@ -381,11 +383,13 @@ def update_two_sample_analysis(n_clicks, data_string_1, data_string_2, null_hypo
 
     # --- Plotly 그래프 생성 (2x2 subplots) ---
     fig = make_subplots(
-        rows=2, cols=2,
+        rows=3, cols=2,
         subplot_titles=(
             "Sample 1 히스토그램 (Fitted Normal Distribution)", "Sample 1 정규 확률도 (Normal Probability Plot)",
-            "Sample 2 히스토그램 (Fitted Normal Distribution)", "Sample 2 정규 확률도 (Normal Probability Plot)"
-        )
+            "Sample 2 히스토그램 (Fitted Normal Distribution)", "Sample 2 정규 확률도 (Normal Probability Plot)",
+            "데이터 비교 박스 플롯 (Box Plot)", f"{conf_level_float}% 평균 차이의 신뢰 구간"
+        ),
+        vertical_spacing=0.1
     )
 
     # Helper function to add plots for a single sample
@@ -459,11 +463,51 @@ def update_two_sample_analysis(n_clicks, data_string_1, data_string_2, null_hypo
     add_sample_plots(fig, data1, "Sample 1", 1, '#007BFF')
     add_sample_plots(fig, data2, "Sample 2", 2, '#28A745') # Different color for Sample 2
 
+    # Box Plot for comparing two samples
+    df_box = pd.DataFrame({
+        'Value': np.concatenate([data1, data2]),
+        'Sample': ['Sample 1'] * len(data1) + ['Sample 2'] * len(data2)
+    })
+    box_fig = px.box(df_box, x='Sample', y='Value', color='Sample',
+                     color_discrete_map={'Sample 1': '#007BFF', 'Sample 2': '#28A745'})
+    for trace in box_fig.data:
+        fig.add_trace(trace, row=3, col=1)
+    fig.update_yaxes(title_text="데이터 값", row=3, col=1)
+    fig.update_xaxes(title_text="", row=3, col=1)
+
+    # Confidence Interval Plot for the difference
+    if not np.isnan(ci_diff[0]):
+        fig.add_trace(go.Scatter(
+            x=[mean_diff],
+            y=['평균 차이'],
+            error_x=dict(
+                type='data', symmetric=False,
+                array=[ci_diff[1] - mean_diff],
+                arrayminus=[mean_diff - ci_diff[0]],
+                thickness=1.5, color='#EF553B'
+            ),
+            mode='markers',
+            marker=dict(size=12, color='#EF553B', symbol='circle'),
+        ), row=3, col=2)
+
+        # Add annotations for CI values
+        fig.add_annotation(x=ci_diff[0], y='평균 차이', text=f"{ci_diff[0]:.4f}", showarrow=False, yshift=-20, font=dict(color="black"), row=3, col=2)
+        fig.add_annotation(x=ci_diff[1], y='평균 차이', text=f"{ci_diff[1]:.4f}", showarrow=False, yshift=-20, font=dict(color="black"), row=3, col=2)
+
+        # Add a vertical line at x=0 for reference
+        fig.add_vline(x=mean_diff, line_dash="dot", line_color="gray", 
+                      annotation_text=f"두 표본의 차이: {mean_diff:.4f}", 
+                      annotation_position="top right",
+                      row=3, col=2)
+
+    fig.update_yaxes(showticklabels=False, title_text="", row=3, col=2)
+    fig.update_xaxes(title_text="신뢰 구간 (평균1 - 평균2)", row=3, col=2)
+
     fig.update_layout(
         title_text=f"<b>2표본 t-검정 및 정규성 검정 결과</b>",
         title_x=0.5,
         showlegend=False,
-        height=900, # Increased height for 2x2 plots
+        height=1200, # Increased height for 3x2 plots
         bargap=0.01
     )
 

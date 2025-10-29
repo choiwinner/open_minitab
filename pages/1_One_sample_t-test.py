@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 from scipy import stats
+import plotly.express as px
 
 register_page(__name__, path='/')
 
@@ -251,10 +252,12 @@ def update_one_sample_analysis(n_clicks, data_string, hypo_mean, null_hypothesis
 
     # --- Plotly 그래프 생성 (1x2 subplots) ---
     fig = make_subplots(
-        rows=1, cols=2,
+        rows=2, cols=2,
         subplot_titles=(
-            "히스토그램 (Fitted Normal Distribution)", "정규 확률도 (Normal Probability Plot)"
-        )
+            "히스토그램 (Fitted Normal Distribution)", "정규 확률도 (Normal Probability Plot)",
+            "박스 플롯 (Box Plot)", f"{conf_level_float}% 평균의 신뢰 구간 (Confidence Interval)"
+        ),
+        vertical_spacing=0.15
     )
 
     # 히스토그램
@@ -277,11 +280,71 @@ def update_one_sample_analysis(n_clicks, data_string, hypo_mean, null_hypothesis
     fig.update_yaxes(title_text="데이터 값 (Ordered Values)", row=1, col=2)
     fig.update_xaxes(title_text="이론적 분위수 (Theoretical Quantiles)", row=1, col=2)
 
+    # Box Plot (요청 1)
+    # plotly.express를 사용하여 box plot 생성
+    #box_fig = px.box(y=data, points="all", color_discrete_sequence=['#007BFF'])
+    box_fig = px.box(y=data, color_discrete_sequence=['#007BFF'])
+    #box_fig.update_traces(name='데이터', boxmean='sd') # 평균 및 표준편차 표시, 이름 설정
+    fig.add_trace(box_fig.data[0], row=2, col=1)
+    fig.update_yaxes(title_text="데이터 값", row=2, col=1)
+
+    # Confidence Interval Plot (요청 2)
+    if not np.isnan(ci_mean[0]):
+        # Minitab 스타일로 신뢰구간을 x축에 표시
+        fig.add_trace(go.Scatter(
+            x=[mean],
+            y=['평균'],
+            error_x=dict(
+                type='data',
+                symmetric=False,
+                array=[ci_mean[1] - mean],
+                arrayminus=[mean - ci_mean[0]],
+                thickness=1.5,
+                color='#007BFF'
+            ),
+            mode='markers', # 마커만 표시하도록 변경
+            marker=dict(size=12, color='#007BFF', symbol='circle'),
+            name=f'{conf_level_float}% CI'
+        ), row=2, col=2)
+
+        # 신뢰구간 양 끝에 텍스트 추가 (add_annotation 사용)
+        # 하한값
+        fig.add_annotation(x=ci_mean[0], y='평균', text=f"{ci_mean[0]:.4f}",
+                           showarrow=False, yshift=-20, font=dict(color="black"), row=2, col=2)
+        # 상한값
+        fig.add_annotation(x=ci_mean[1], y='평균', text=f"{ci_mean[1]:.4f}",
+                           showarrow=False, yshift=-20, font=dict(color="black"), row=2, col=2)
+
+    fig.update_yaxes(showticklabels=False, title_text="", row=2, col=2)
+    fig.update_xaxes(title_text="평균 신뢰 구간(Confidence Interval)", row=2, col=2)
+
+    # 가설 평균이 있을 경우, 박스 플롯과 신뢰구간 그래프에 선 추가
+    if hypo_mean is not None and str(hypo_mean).strip() != '' and not np.isnan(float(hypo_mean)):
+        try:
+            hypo_mean_float = float(hypo_mean)
+            fig.add_hline(y=hypo_mean_float, line_dash="dot", line_color="green",
+                          annotation=dict(
+                              text=f"가설 평균: {hypo_mean}",
+                              font=dict(color="green")
+                          ),
+                          annotation_position="bottom right",
+                          row=2, col=1)
+            # 신뢰구간 플롯에는 수직선(vline)으로 가설 평균 표시
+            fig.add_vline(x=hypo_mean_float, line_dash="dot", line_color="green", 
+                          annotation=dict(
+                              text=f"가설 평균: {hypo_mean}",
+                              font=dict(color="green")
+                          ),
+                          annotation_position="top right",
+                          row=2, col=2)
+        except (ValueError, TypeError):
+            pass # hypo_mean이 숫자가 아니면 무시
+
     fig.update_layout(
         title_text=f"<b>데이터 정규성 검정 결과</b><br>(Shapiro-Wilk P-value: {f'{shapiro_p:.4f}' if shapiro_p is not None else 'N/A'})",
         title_x=0.5,
         showlegend=False,
-        height=500,
+        height=800, # 그래프 높이 조정
         bargap=0.01
     )
 
