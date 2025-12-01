@@ -89,7 +89,7 @@ layout = html.Div(
     ),
 
     html.Div(className='header', children=[
-        html.H1("ATL 패턴 추출기"),
+        html.H1("ATL Pattern Converter", style={'textAlign': 'center', 'color': '#333'}),
         html.P("파일 병합을 위해 ZIP 파일을 업로드하고 Pattern 이름(ex: pattern.asc)을 입력하세요."),
     ]),
 
