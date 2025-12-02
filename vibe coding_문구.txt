@@ -1,0 +1,35 @@
+기능을 추가해서 radio button으로 실행 유무를 결정하고 추가하는 기능은 output_file을 읽어서 아래와 같이 <규칙>대로 처리하고 <예제>를 참조해서 코드를 추가해 줘.
+
+<규칙>
+규칙 1. 줄마다 ';' 이후는 주석이므로 처리하지 않는다.
+규칙 2. JNI9,JNI10,JNI11,JNI12,JNI13,JNI14,JNI15는 각각 JNI1,JNI2,JNI3,JNI4,JNI5,JNI6,JNI7,JNI8 중 하나로 변경한다,
+규칙 3. JNI9~JNI15를 JNI1~8 중 하나로 변경할 때 기존에 있는 JNI는 사용하지 않는다. 기존에 JNI1,JNI2가 적혀 있으면 JNI3~JNI7로만 변경 가능하다.
+규칙 4. JNI9~JNI15를 JNI1~8 중 하나로 변경하면 매칭된 규칙으로 IDX9~15를 IDX1~8으로 변경한다. 예를 들어 JNI15를 JDX1로 변경했으면 IDX15를 IDX1로 변경한다.
+규칙 5. JNI9~JNI15를 JNI1~8 중 하나로 변경하지 못하면 Error Text를 반환해라
+
+<예제>
+1. before
+IDX15 = #4E0
+IDX14 = #C
+IDX9 = #0
+IDX2 = #1E
+
+
+JNI15 KKK XYCLD     ;JNI14
+JNI14 JJJ XYCLD
+JNI2 AAA 
+JNI9 BBB
+;JNI9 K2K
+
+2. after
+IDX8 = #4E0
+IDX7 = #C
+IDX6 = #0
+IDX2 = #1E
+
+
+JNI8 KKK XYCLD     ;JNI14
+JNI7 JJJ XYCLD
+JNI2 AAA 
+JNI2 BBB
+;JNI9 K2K
