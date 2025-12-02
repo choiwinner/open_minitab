@@ -1,3 +1,5 @@
+# pip pip install dash-extensions
+
 import os
 import sys
 import re
@@ -9,7 +11,7 @@ import uuid
 from datetime import datetime
 
 import dash
-from dash import dcc, html, Input, Output, State, register_page
+from dash_extensions.enrich import dcc, html, Input, Output, State, register_page, callback_context, no_update
 
 register_page(__name__)
 
@@ -73,6 +75,65 @@ def merge_files(main_input_file, output_filename, base_dir):
         print(f"오류: 최종 파일을 쓰는 중 예외가 발생했습니다: {e}", file=sys.stderr)
         return False
 
+def process_jni_remap(file_content):
+    """
+    JNI9~15를 JNI1~8로, IDX9~15를 IDX1~8로 재매핑하는 함수.
+    """
+    lines = file_content.splitlines()
+    
+    # 1. 파일 전체를 스캔하여 사용 중인 JNI와 재매핑이 필요한 JNI를 찾습니다.
+    used_jni_low = set()
+    to_remap_jni_high = set()
+    
+    for line in lines:
+        effective_line = line.split(';', 1)[0]
+        # JNI 토큰 찾기
+        jni_tokens = re.findall(r'\bJNI(\d+)\b', effective_line)
+        for num_str in jni_tokens:
+            num = int(num_str)
+            if 1 <= num <= 8:
+                used_jni_low.add(f"JNI{num}")
+            elif 9 <= num <= 15:
+                to_remap_jni_high.add(f"JNI{num}")
+
+    # 2. 재매핑 규칙을 생성합니다.
+    available_jni_low = {f"JNI{i}" for i in range(1, 9)}
+    available_slots = sorted(list(available_jni_low - used_jni_low), key=lambda s: int(s[3:]))
+    
+    to_remap_sorted = sorted(list(to_remap_jni_high), key=lambda s: int(s[3:]))
+
+    if len(available_slots) < len(to_remap_sorted):
+        raise ValueError(f"JNI 재매핑 실패: JNI1-8에 할당 가능한 공간({len(available_slots)}개)이 부족합니다. (필요: {len(to_remap_sorted)}개)")
+
+    # 예제와 같이 높은 번호부터 매핑합니다.
+    jni_map = {old: new for old, new in zip(reversed(to_remap_sorted), reversed(available_slots))}
+    
+    # IDX 맵 생성 (JNI 맵 기반)
+    idx_map = {f"IDX{k[3:]}": f"IDX{v[3:]}" for k, v in jni_map.items()}
+    
+    # 3. 새로운 파일 내용을 생성합니다.
+    new_lines = []
+    for line in lines:
+        # 주석과 코드 부분을 분리
+        parts = line.split(';', 1)
+        effective_line = parts[0]
+        comment = f";{parts[1]}" if len(parts) > 1 else ""
+
+        # JNI와 IDX를 동시에 치환하기 위해 정규식 사용
+        # 단어 경계(\b)를 사용하여 JNI1이 JNI10의 일부로 인식되는 것을 방지
+        def replace_token(match):
+            token = match.group(0)
+            if token in jni_map:
+                return jni_map[token]
+            if token in idx_map:
+                return idx_map[token]
+            return token
+
+        modified_line = re.sub(r'\b(JNI\d+|IDX\d+)\b', replace_token, effective_line)
+        new_lines.append(modified_line + comment)
+        
+    return "\n".join(new_lines)
+
 # --- Dash 애플리케이션 설정 ---
 
 #app = dash.Dash(__name__)
@@ -110,9 +171,23 @@ layout = html.Div(
             placeholder='변경할 Pattern 파일 이름 (예: pattern.asc)',
         ),
         
+        html.Div([
+            html.Label("JNI,IDX 재매핑(JNI9-15 -> JNI1-8):", style={'marginRight': '10px', 'fontWeight': 'bold'}),
+            dcc.RadioItems(
+                id='remap-jni-radio',
+                options=[{'label': '실행', 'value': 'yes'}, {'label': '실행 안함', 'value': 'no'}],
+                value='no',
+                inline=True
+            )
+        ], style={'marginTop': '15px', 'marginBottom': '15px'}),
+
         html.Button('병합 실행', id='submit-button', n_clicks=0),
     ]),
-    html.Div(id='output-status', className='status-container'),
+    dcc.Loading(
+        id="loading-spinner",
+        children=html.Div(id='output-status', className='status-container'),
+        type="circle",
+    ),
     dcc.Download(id="download-result"),
 ])
 
@@ -126,19 +201,20 @@ def update_upload_status(filename):
     return ""
 
 @dash.callback(
-    [Output('output-status', 'children'),
-     Output('download-result', 'data')],
-    [Input('submit-button', 'n_clicks')],
-    [State('upload-zip', 'contents'),
-     State('upload-zip', 'filename'),
-     State('main-file-name', 'value')]
+    Output("download-result", "data"),
+    Output("output-status", "children"),
+    Input("submit-button", "n_clicks"),
+    [
+        State('upload-zip', 'contents'),
+        State('upload-zip', 'filename'),
+        State('main-file-name', 'value'),
+        State('remap-jni-radio', 'value')
+    ],
+    prevent_initial_call=True,
 )
-def update_output(n_clicks, content, zip_filename, main_filename):
-    if n_clicks == 0 or not content:
-        return "", None
-
-    if not main_filename:
-        return html.Div("Pattern 파일 이름을 입력하세요.", className='status-error'), None
+def run_merge_process(n_clicks, content, zip_filename, main_filename, remap_jni_choice):
+    if not content or not main_filename:
+        return no_update, html.Div("ZIP 파일과 Pattern 파일 이름을 모두 입력하세요.", className='status-error')
 
     # 임시 작업 디렉토리 생성
     session_id = str(uuid.uuid4())
@@ -167,7 +243,7 @@ def update_output(n_clicks, content, zip_filename, main_filename):
         if main_filename not in file_list_in_zip:
             # ZIP 파일 내의 파일 목록을 보여주어 디버깅에 도움을 줌
             file_list_for_error = [f for f in file_list_in_zip if os.path.isfile(os.path.join(work_dir, f))]
-            return html.Div(f"오류: ZIP 파일 내에서 '{main_filename}'을(를) 찾을 수 없습니다. (대소문자 구분) 사용 가능한 파일: {', '.join(file_list_for_error)}", className='status-error'), None
+            raise ValueError(f"오류: ZIP 파일 내에서 '{main_filename}'을(를) 찾을 수 없습니다. (대소문자 구분) 사용 가능한 파일: {', '.join(file_list_for_error)}")
 
         # 병합할 파일 경로 설정
         main_file_path = os.path.join(work_dir, main_filename)
@@ -182,19 +258,26 @@ def update_output(n_clicks, content, zip_filename, main_filename):
         success = merge_files(main_file_path, output_path, work_dir)
 
         if success and os.path.exists(output_path):
-            # 성공 시 다운로드 준비
+            # JNI 재매핑 기능 실행 여부 확인
+            if remap_jni_choice == 'yes':
+                with open(output_path, 'r', encoding='utf-8') as f:
+                    file_content = f.read()
+                
+                modified_content = process_jni_remap(file_content)
+                
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(modified_content)
+
             status_message = html.Div([
                 html.P(f"병합 성공! '{output_filename}' 파일을 다운로드합니다."),
                 html.P(f"(업로드된 파일: {zip_filename}, 메인 파일: {main_filename})")
             ], className='status-success')
-            
-            return status_message, dcc.send_file(output_path, filename=output_filename)
+            return dcc.send_file(output_path, filename=output_filename), status_message
         else:
-            # 실패 시 오류 메시지
-            return html.Div("파일 병합 중 오류가 발생했습니다. 서버 로그를 확인하세요.", className='status-error'), None
+            raise RuntimeError("파일 병합 중 오류가 발생했습니다. 서버 로그를 확인하세요.")
 
     except Exception as e:
-        return html.Div(f"처리 중 예외가 발생했습니다: {e}", className='status-error'), None
+        return no_update, html.Div(f"처리 중 예외가 발생했습니다: {e}", className='status-error')
     finally:
         # 임시 디렉토리 정리 (선택적: 디버깅을 위해 남겨둘 수 있음)
         if os.path.exists(work_dir):

@@ -1,6 +1,8 @@
-from dash import Dash, html, dcc, page_container, page_registry
+from dash import html, dcc, page_container, page_registry
 import dash_bootstrap_components as dbc
-app = Dash(__name__, use_pages=True, external_stylesheets=[dbc.themes.BOOTSTRAP])
+from dash_extensions.enrich import DashProxy, ServersideOutputTransform
+
+app = DashProxy(__name__, use_pages=True, external_stylesheets=[dbc.themes.BOOTSTRAP], transforms=[ServersideOutputTransform()])
 
 SIDEBAR_STYLE = {
     "position": "fixed",
