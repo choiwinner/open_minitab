@@ -146,7 +146,7 @@ layout = html.Div(
     # CSS 파일은 'assets' 폴더 내에 있어야 합니다.
     html.Link(
         rel='stylesheet',
-        href='/assets/style.css'
+        href='/static/style.css'
     ),
 
     html.Div(className='header', children=[

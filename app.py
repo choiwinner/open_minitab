@@ -2,6 +2,8 @@ from dash import html, dcc, page_container, page_registry
 import dash_bootstrap_components as dbc
 from dash_extensions.enrich import DashProxy, ServersideOutputTransform
 
+#app = DashProxy(__name__, use_pages=True, external_stylesheets=[dbc.themes.BOOTSTRAP], transforms=[ServersideOutputTransform()], assets_folder='static')
+
 app = DashProxy(__name__, use_pages=True, external_stylesheets=[dbc.themes.BOOTSTRAP], transforms=[ServersideOutputTransform()])
 
 SIDEBAR_STYLE = {
