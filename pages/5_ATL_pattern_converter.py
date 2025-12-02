@@ -50,7 +50,9 @@ def process_file_recursively(filepath, output_file, processed_files, base_dir):
                         filename_to_insert += '.asc'
                     
                     path_to_insert = os.path.join(base_dir, filename_to_insert)
-                    
+
+                    output_file.write(';;Converted from '+ effective_line)
+                    output_file.write('\n')
                     process_file_recursively(path_to_insert, output_file, processed_files, base_dir)
                     output_file.write('\n')
                 else:
