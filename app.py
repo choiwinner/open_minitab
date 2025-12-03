@@ -1,10 +1,11 @@
-from dash import html, dcc, page_container, page_registry
+from dash import Dash, html, dcc, page_container, page_registry
 import dash_bootstrap_components as dbc
-from dash_extensions.enrich import DashProxy, ServersideOutputTransform
+import dash_uploader as du
+import os
 
-#app = DashProxy(__name__, use_pages=True, external_stylesheets=[dbc.themes.BOOTSTRAP], transforms=[ServersideOutputTransform()], assets_folder='static')
+UPLOAD_FOLDER_ROOT = "uploads"
 
-app = DashProxy(__name__, use_pages=True, external_stylesheets=[dbc.themes.BOOTSTRAP], transforms=[ServersideOutputTransform()])
+app = Dash(__name__, use_pages=True, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 SIDEBAR_STYLE = {
     "position": "fixed",
@@ -29,6 +30,9 @@ sidebar = html.Div([
 ], style=SIDEBAR_STYLE)
 
 app.layout = html.Div([sidebar, html.Div(page_container, style=CONTENT_STYLE)])
+
+# dash-uploader 설정
+du.configure_upload(app, UPLOAD_FOLDER_ROOT)
 
 import socket
 

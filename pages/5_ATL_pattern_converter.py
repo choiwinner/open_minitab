@@ -1,4 +1,5 @@
 # pip pip install dash-extensions
+# pip install dash-uploader
 
 import os
 import sys
@@ -11,7 +12,8 @@ import uuid
 from datetime import datetime
 
 import dash
-from dash_extensions.enrich import dcc, html, Input, Output, State, register_page, callback_context, no_update
+from dash import dcc, html, Input, Output, State, register_page, callback_context, no_update, ALL
+import dash_uploader as du
 
 register_page(__name__)
 
@@ -21,23 +23,24 @@ def process_file_recursively(filepath, output_file, processed_files, base_dir):
     파일을 재귀적으로 읽고 'INSERT' 지시어를 처리하여 output_file에 씁니다.
     웹 앱 환경에 맞게 base_dir 인자를 추가했습니다.
     """
-    abs_filepath = os.path.abspath(filepath)
+    # os.path.abspath는 현재 작업 디렉토리에 의존하므로, base_dir를 기준으로 경로를 명확히 처리합니다.
+    norm_filepath = os.path.normpath(os.path.join(base_dir, os.path.basename(filepath)))
 
-    if abs_filepath in processed_files:
+    if norm_filepath in processed_files:
         print(f"경고: 순환 참조가 감지되어 '{filepath}' 파일을 다시 삽입하지 않습니다.", file=sys.stderr)
         return
 
-    if not os.path.exists(abs_filepath):
+    if not os.path.exists(norm_filepath):
         print(f"오류: '{filepath}' 파일을 찾을 수 없습니다.", file=sys.stderr)
         return
 
-    print(f"처리 중: '{filepath}'")
-    processed_files.add(abs_filepath)
+    print(f"처리 중: '{norm_filepath}'")
+    processed_files.add(norm_filepath)
 
-    current_dir = os.path.dirname(abs_filepath)
+    current_dir = os.path.dirname(norm_filepath)
 
     try:
-        with open(abs_filepath, 'r', encoding='utf-8') as f:
+        with open(norm_filepath, 'r', encoding='utf-8') as f:
             for line in f:
                 stripped_line = line.strip()
                 comment_pos = stripped_line.find(';')
@@ -60,7 +63,7 @@ def process_file_recursively(filepath, output_file, processed_files, base_dir):
     except Exception as e:
         print(f"오류: '{filepath}' 파일을 읽는 중 예외가 발생했습니다: {e}", file=sys.stderr)
 
-    processed_files.remove(abs_filepath)
+    processed_files.remove(norm_filepath)
 
 def merge_files(main_input_file, output_filename, base_dir):
     """
@@ -157,15 +160,14 @@ layout = html.Div(
     ]),
 
     html.Div(className='controls-container', children=[
-        dcc.Upload(
+        du.Upload(
             id='upload-zip',
-            children=html.Div([
-                'ZIP 파일을 드래그 앤 드롭하거나 ',
-                html.A('파일을 선택하세요')
-            ]),
-            multiple=False
+            text='ZIP 파일을 드래그 앤 드롭하거나 클릭하여 선택하세요.',
+            filetypes=['zip'],
+            max_files=1,
+            upload_id=uuid.uuid1() # 고유한 업로드 ID 생성
         ),
-        html.Div(id='upload-status'),
+        html.Div(id='upload-status', style={'marginTop': '10px'}),
         
         dcc.Input(
             id='main-file-name',
@@ -183,7 +185,7 @@ layout = html.Div(
             )
         ], style={'marginTop': '15px', 'marginBottom': '15px'}),
 
-        html.Button('병합 실행', id='submit-button', n_clicks=0),
+        html.Button('병합 실행', id='submit-button', n_clicks=0, disabled=True),
     ]),
     dcc.Loading(
         id="loading-spinner",
@@ -194,41 +196,54 @@ layout = html.Div(
 ])
 
 @dash.callback(
-    Output('upload-status', 'children'),
-    Input('upload-zip', 'filename')
+    Output('submit-button', 'disabled'),
+    Input('upload-zip', 'isCompleted'),
+    Input('main-file-name', 'value')
 )
-def update_upload_status(filename):
-    if filename:
-        return html.Div(f"'{filename}' 파일이 로드되었습니다.", className='upload-success')
-    return ""
+def set_button_enabled_state(isCompleted, main_filename):
+    """파일 업로드가 완료되고, 메인 파일 이름이 입력되면 버튼을 활성화합니다."""
+    if isCompleted and main_filename:
+        return False  # 버튼 활성화
+    return True  # 버튼 비활성화
+
+
+@dash.callback(
+    Output('upload-status', 'children', allow_duplicate=True),
+    Input('upload-zip', 'isCompleted'),
+    State('upload-zip', 'fileNames'),
+    prevent_initial_call=True
+)
+def update_upload_status(isCompleted, filenames):
+    if isCompleted and filenames:
+        return html.Div(f"'{filenames[0]}' 파일이 업로드되었습니다.", className='upload-success')
+    return dash.no_update
 
 @dash.callback(
     Output("download-result", "data"),
     Output("output-status", "children"),
     Input("submit-button", "n_clicks"),
-    [
-        State('upload-zip', 'contents'),
-        State('upload-zip', 'filename'),
-        State('main-file-name', 'value'),
-        State('remap-jni-radio', 'value')
-    ],
+    State('upload-zip', 'fileNames'),
+    State('upload-zip', 'upload_id'),
+    State('main-file-name', 'value'),
+    State('remap-jni-radio', 'value'),
     prevent_initial_call=True,
 )
-def run_merge_process(n_clicks, content, zip_filename, main_filename, remap_jni_choice):
-    if not content or not main_filename:
+def run_merge_process(n_clicks, filenames, upload_id, main_filename, remap_jni_choice):
+    # 버튼이 활성화된 상태에서 클릭되었으므로, 파일 업로드와 파일 이름 입력은 완료된 상태임.
+    if not filenames or not main_filename:
         return no_update, html.Div("ZIP 파일과 Pattern 파일 이름을 모두 입력하세요.", className='status-error')
 
     # 임시 작업 디렉토리 생성
     session_id = str(uuid.uuid4())
     work_dir = os.path.join(os.getcwd(), "temp", session_id)
     os.makedirs(work_dir, exist_ok=True)
+    
+    zip_filename = filenames[0]
+    upload_folder = os.path.join('uploads', upload_id)
+    zip_filepath = os.path.join(upload_folder, zip_filename)
 
     try:
-        # ZIP 파일 처리
-        content_type, content_string = content.split(',')
-        decoded = base64.b64decode(content_string)
-        
-        with zipfile.ZipFile(io.BytesIO(decoded), 'r') as zip_ref:
+        with zipfile.ZipFile(zip_filepath, 'r') as zip_ref:
             zip_ref.extractall(work_dir)
 
         # ZIP 파일 내에 최상위 폴더가 있는 경우 처리
@@ -270,11 +285,23 @@ def run_merge_process(n_clicks, content, zip_filename, main_filename, remap_jni_
                 with open(output_path, 'w', encoding='utf-8') as f:
                     f.write(modified_content)
 
+            # 파일을 메모리로 읽어들여 dcc.send_file이 파일 핸들을 점유하지 않도록 합니다.
+            # 이렇게 하면 finally 블록에서 폴더를 삭제할 때 PermissionError가 발생하지 않습니다.
+            with open(output_path, 'rb') as f:
+                file_data = f.read()
+
+            # dcc.send_data를 사용하기 위해 base64로 인코딩
+            encoded_file_data = base64.b64encode(file_data).decode()
+            # dcc.Download 컴포넌트에 전달할 딕셔너리를 생성합니다.
+            # 'send_data' 함수 대신 이 방식을 사용합니다.
+            download_data = dict(content=encoded_file_data,
+                                 filename=output_filename,
+                                 base64=True)
             status_message = html.Div([
                 html.P(f"병합 성공! '{output_filename}' 파일을 다운로드합니다."),
                 html.P(f"(업로드된 파일: {zip_filename}, 메인 파일: {main_filename})")
             ], className='status-success')
-            return dcc.send_file(output_path, filename=output_filename), status_message
+            return download_data, status_message
         else:
             raise RuntimeError("파일 병합 중 오류가 발생했습니다. 서버 로그를 확인하세요.")
 
@@ -282,5 +309,7 @@ def run_merge_process(n_clicks, content, zip_filename, main_filename, remap_jni_
         return no_update, html.Div(f"처리 중 예외가 발생했습니다: {e}", className='status-error')
     finally:
         # 임시 디렉토리 정리 (선택적: 디버깅을 위해 남겨둘 수 있음)
+        if os.path.exists(upload_folder):
+            shutil.rmtree(upload_folder)
         if os.path.exists(work_dir):
             shutil.rmtree(work_dir)
