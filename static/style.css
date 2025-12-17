@@ -13,7 +13,7 @@ body {
 }
 
 /* Main App Container */
-#app-container {
+#app-container, #app-container-ldi {
     background-color: #ffffff;
     border-radius: 18px; /* Apple-like rounded corners */
     padding: 30px 40px;
@@ -50,7 +50,7 @@ p {
 }
 
 /* Upload Component */
-#upload-zip {
+#upload-zip, #upload-zip-ldi {
     border: 2px dashed #d2d2d7;
     border-radius: 12px;
     padding: 40px 20px;
@@ -59,19 +59,19 @@ p {
     color: #6e6e73;
 }
 
-#upload-zip:hover {
+#upload-zip:hover, #upload-zip-ldi:hover {
     border-color: #007aff; /* Apple's blue */
     background-color: #f5faff;
 }
 
-#upload-zip a {
+#upload-zip a, #upload-zip-ldi a {
     color: #007aff;
     text-decoration: none;
     font-weight: 500;
 }
 
 /* Input Field */
-#main-file-name {
+#main-file-name, #main-file-name-ldi {
     width: 100%;
     padding: 12px 16px;
     border-radius: 12px;
@@ -81,13 +81,13 @@ p {
     transition: border-color 0.3s ease;
 }
 
-#main-file-name:focus {
+#main-file-name:focus, #main-file-name-ldi:focus {
     outline: none;
     border-color: #007aff;
 }
 
 /* Button */
-#submit-button {
+#submit-button, #submit-button-ldi, #cleanup-button, #cleanup-button-ldi {
     background-color: #007aff;
     color: white;
     border: none;
@@ -100,7 +100,16 @@ p {
     width: 100%;
 }
 
-#submit-button:hover {
+#cleanup-button, #cleanup-button-ldi{
+    background-color: #ff3b30; 
+    margin-top: 10px;
+}
+
+#cleanup-button:hover, #cleanup-button-ldi:hover {
+    background-color: #d70015; 
+}
+
+#submit-button:hover, #submit-button-ldi:hover {
     background-color: #005ecb;
 }
 
@@ -122,7 +131,7 @@ p {
 }
 
 /* Upload status message */
-#upload-status {
+#upload-status, #upload-status-ldi {
     /* The gap is managed by the parent 'controls-container' */
     text-align: left;
 }

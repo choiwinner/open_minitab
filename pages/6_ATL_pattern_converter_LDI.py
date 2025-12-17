@@ -86,37 +86,7 @@ def process_jni_remap(file_content):
     """
     lines = file_content.splitlines()
     
-    # 1. 파일 전체를 스캔하여 사용 중인 JNI와 재매핑이 필요한 JNI를 찾습니다.
-    used_jni_low = set()
-    to_remap_jni_high = set()
-    
-    for line in lines:
-        effective_line = line.split(';', 1)[0]
-        # JNI 토큰 찾기
-        jni_tokens = re.findall(r'\bJNI(\d+)\b', effective_line)
-        for num_str in jni_tokens:
-            num = int(num_str)
-            if 1 <= num <= 8:
-                used_jni_low.add(f"JNI{num}")
-            elif 9 <= num <= 16:
-                to_remap_jni_high.add(f"JNI{num}")
-
-    # 2. 재매핑 규칙을 생성합니다.
-    available_jni_low = {f"JNI{i}" for i in range(1, 9)}
-    available_slots = sorted(list(available_jni_low - used_jni_low), key=lambda s: int(s[3:]))
-    
-    to_remap_sorted = sorted(list(to_remap_jni_high), key=lambda s: int(s[3:]))
-
-    if len(available_slots) < len(to_remap_sorted):
-        raise ValueError(f"JNI 재매핑 실패: JNI1-8에 할당 가능한 공간({len(available_slots)}개)이 부족합니다. (필요: {len(to_remap_sorted)}개)")
-
-    # 예제와 같이 높은 번호부터 매핑합니다.
-    jni_map = {old: new for old, new in zip(reversed(to_remap_sorted), reversed(available_slots))}
-    
-    # IDX 맵 생성 (JNI 맵 기반)
-    idx_map = {f"IDX{k[3:]}": f"IDX{v[3:]}" for k, v in jni_map.items()}
-    
-    # 3. 새로운 파일 내용을 생성합니다.
+    # 1. 파일 전체를 스캔하여 사용 중인 JNI와 재매핑이 필요한 JNI를 생성합니다.
     new_lines = []
     for line in lines:
         # 주석과 코드 부분을 분리
@@ -128,14 +98,39 @@ def process_jni_remap(file_content):
         # 단어 경계(\b)를 사용하여 JNI1이 JNI10의 일부로 인식되는 것을 방지
         def replace_token(match):
             token = match.group(0)
-            if token in jni_map:
-                return jni_map[token]
-            if token in idx_map:
-                return idx_map[token]
-            return token
-
-        modified_line = re.sub(r'\b(JNI\d+|IDX\d+)\b', replace_token, effective_line)
-        new_lines.append(modified_line + comment)
+            token_num = re.findall(r'\bJNI(\d+)\b', token)
+            int_token_num = int(token_num[0])
+            if int_token_num > 8:
+                new_token_num = int_token_num - 8
+            else:
+                new_token_num = int_token_num
+            
+            out = f"JNI{new_token_num}"
+            return out
+        
+        def make_ldi(line):
+            token_num = re.findall(r'\bJNI(\d+)\b', line)
+            int_token_num = int(token_num[0])
+            if int_token_num > 8:
+                new_token_num = int_token_num - 8
+            else:
+                new_token_num = int_token_num
+            
+            out1 = "LDI" + str(new_token_num) + " " + str(int_token_num) +" :"
+            out2 = ' '*(len(out1)-1) + ":"
+            return [out1, out2]
+        
+        if re.search(r'\bJNI(\d+)\b', effective_line):
+            #ldi_line = re.sub(r'\b(JNI\d+)\b', lambda m: replace_token(m, effective_line), effective_line)
+            ldi_line = make_ldi(effective_line)
+            new_lines.append(";; LDI Converter Changed")
+            new_lines.append(ldi_line[0])
+            new_lines.append(ldi_line[1])
+            new_lines.append(";; ORG " + effective_line + comment)
+            modified_line = re.sub(r'\b(JNI\d+)\b', lambda m: replace_token(m), effective_line)
+            new_lines.append(modified_line + comment)
+        else:
+            new_lines.append(effective_line + comment)
         
     return "\n".join(new_lines)
 
@@ -146,7 +141,7 @@ def process_jni_remap(file_content):
 
 layout = html.Div(
     style={'fontFamily': 'Arial, sans-serif', 'maxWidth': '1000px', 'margin': 'auto', 'padding': '20px'},
-    id='app-container', children=[
+    id='app-container-ldi', children=[
     # 이 페이지에만 특정 CSS 파일을 적용하기 위해 html.Link를 추가합니다.
     # CSS 파일은 'assets' 폴더 내에 있어야 합니다.
     html.Link(
@@ -155,52 +150,52 @@ layout = html.Div(
     ),
 
     html.Div(className='header', children=[
-        html.H1("ATL Pattern Converter", style={'textAlign': 'center', 'color': '#333'}),
+        html.H1("ATL Pattern Converter(LDI)", style={'textAlign': 'center', 'color': '#333'}),
         html.P("파일 병합을 위해 ZIP 파일을 업로드하고 Pattern 이름(ex: pattern.asc)을 입력하세요."),
     ]),
 
     html.Div(className='controls-container', children=[
         du.Upload(
-            id='upload-zip',
+            id='upload-zip-ldi',
             text='ZIP 파일을 드래그 앤 드롭하거나 클릭하여 선택하세요.',
             filetypes=['zip'],
             max_files=1,
             upload_id=uuid.uuid1() # 고유한 업로드 ID 생성
         ),
-        html.Div(id='upload-status', style={'marginTop': '10px'}),
+        html.Div(id='upload-status-ldi', style={'marginTop': '10px'}),
         
         dcc.Input(
-            id='main-file-name',
+            id='main-file-name-ldi',
             type='text',
             placeholder='변경할 Pattern 파일 이름 (예: pattern.asc)',
         ),
         
         html.Div([
-            html.Label("JNI,IDX 재매핑(JNI9-16 -> JNI1-8):", style={'marginRight': '10px', 'fontWeight': 'bold'}),
+            html.Label("JNI 재매핑(JNI9-16 -> JNI1-8):", style={'marginRight': '10px', 'fontWeight': 'bold'}),
             dcc.RadioItems(
-                id='remap-jni-radio',
+                id='remap-jni-radio-ldi',
                 options=[{'label': '실행', 'value': 'yes'}, {'label': '실행 안함', 'value': 'no'}],
                 value='no',
                 inline=True
             )
         ], style={'marginTop': '15px', 'marginBottom': '15px'}),
 
-        html.Button('병합 실행', id='submit-button', n_clicks=0, disabled=True),
-        html.Button('임시 폴더 삭제 (초기화)', id='cleanup-button', n_clicks=0),
-        html.Div(id='cleanup-status', style={'textAlign': 'center'}),
+        html.Button('병합 실행', id='submit-button-ldi', n_clicks=0, disabled=True),
+        html.Button('임시 폴더 삭제 (초기화)', id='cleanup-button-ldi', n_clicks=0),
+        html.Div(id='cleanup-status-ldi', style={'textAlign': 'center'}),
     ]),
     dcc.Loading(
-        id="loading-spinner",
-        children=html.Div(id='output-status', className='status-container'),
+        id="loading-spinner-ldi",
+        children=html.Div(id='output-status-ldi', className='status-container'),
         type="circle",
     ),
-    dcc.Download(id="download-result"),
+    dcc.Download(id="download-result-ldi"),
 ])
 
 @dash.callback(
-    Output('submit-button', 'disabled'),
-    Input('upload-zip', 'isCompleted'),
-    Input('main-file-name', 'value')
+    Output('submit-button-ldi', 'disabled'),
+    Input('upload-zip-ldi', 'isCompleted'),
+    Input('main-file-name-ldi', 'value')
 )
 def set_button_enabled_state(isCompleted, main_filename):
     """파일 업로드가 완료되고, 메인 파일 이름이 입력되면 버튼을 활성화합니다."""
@@ -210,9 +205,9 @@ def set_button_enabled_state(isCompleted, main_filename):
 
 
 @dash.callback(
-    Output('upload-status', 'children', allow_duplicate=True),
-    Input('upload-zip', 'isCompleted'),
-    State('upload-zip', 'fileNames'),
+    Output('upload-status-ldi', 'children', allow_duplicate=True),
+    Input('upload-zip-ldi', 'isCompleted'),
+    State('upload-zip-ldi', 'fileNames'),
     prevent_initial_call=True
 )
 def update_upload_status(isCompleted, filenames):
@@ -221,13 +216,13 @@ def update_upload_status(isCompleted, filenames):
     return dash.no_update
 
 @dash.callback(
-    Output("download-result", "data"),
-    Output("output-status", "children"),
-    Input("submit-button", "n_clicks"),
-    State('upload-zip', 'fileNames'),
-    State('upload-zip', 'upload_id'),
-    State('main-file-name', 'value'),
-    State('remap-jni-radio', 'value'),
+    Output("download-result-ldi", "data"),
+    Output("output-status-ldi", "children"),
+    Input("submit-button-ldi", "n_clicks"),
+    State('upload-zip-ldi', 'fileNames'),
+    State('upload-zip-ldi', 'upload_id'),
+    State('main-file-name-ldi', 'value'),
+    State('remap-jni-radio-ldi', 'value'),
     prevent_initial_call=True,
 )
 def run_merge_process(n_clicks, filenames, upload_id, main_filename, remap_jni_choice):
@@ -241,7 +236,7 @@ def run_merge_process(n_clicks, filenames, upload_id, main_filename, remap_jni_c
     os.makedirs(work_dir, exist_ok=True)
     
     zip_filename = filenames[0]
-    upload_folder = os.path.join('uploads', upload_id)
+    upload_folder = os.path.join("uploads", upload_id)
     zip_filepath = os.path.join(upload_folder, zip_filename)
 
     try:
@@ -270,7 +265,7 @@ def run_merge_process(n_clicks, filenames, upload_id, main_filename, remap_jni_c
         # 출력 파일 경로 설정
         # rsplit을 사용하여 오른쪽부터 '.'을 기준으로 1번만 분리합니다.
         parts = main_filename.rsplit('.', 1)
-        output_filename = parts[0] + '_new' + '.' + parts[1]
+        output_filename = parts[0] + '_ldi' + '.' + parts[1]
         output_path = os.path.join(work_dir, output_filename)
 
         # 파일 병합 실행
@@ -317,10 +312,11 @@ def run_merge_process(n_clicks, filenames, upload_id, main_filename, remap_jni_c
             shutil.rmtree(work_dir, ignore_errors=True)
 
 @dash.callback(
-    Output('cleanup-status', 'children'),
-    Input('cleanup-button', 'n_clicks'),
+    Output('cleanup-status-ldi', 'children'),
+    Input('cleanup-button-ldi', 'n_clicks'),
     prevent_initial_call=True
 )
+
 def cleanup_temp_folder(n_clicks):
     if not n_clicks:
         return no_update
