@@ -1,7 +1,8 @@
-dash
-dash-bootstrap-components
-dash-uploader
-pandas
-numpy
-scipy
-plotly
+dash==2.14.2
+dash-bootstrap-components==1.5.0
+dash-uploader==0.6.1
+pandas==2.1.4
+numpy==1.26.2
+scipy==1.11.4
+plotly==5.18.0
+html2image

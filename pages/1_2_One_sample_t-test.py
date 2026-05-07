@@ -1,4 +1,3 @@
-
 import dash
 from dash import dcc, html, register_page
 from dash.dependencies import Input, Output, State
@@ -12,7 +11,8 @@ import tempfile
 import re
 from html2image import Html2Image
 
-register_page(__name__, path='/')
+# 새 페이지 등록
+register_page(__name__, name="1표본 t-검정 (이미지 다운로드)")
 
 # --- 헬퍼 함수: Dash 컴포넌트를 HTML 문자열로 변환 (디자인 100% 일치용) ---
 def camel_to_kebab(name):
@@ -42,8 +42,8 @@ layout = html.Div(
     style={'fontFamily': 'Arial, sans-serif', 'maxWidth': '1000px', 'margin': 'auto', 'padding': '20px'},
     children=[
         # 데이터 전달 및 다운로드를 위한 컴포넌트
-        dcc.Store(id='home-stats-download-store'),
-        dcc.Download(id='home-stats-download-component'),
+        dcc.Store(id='home-stats-download-store-v2'),
+        dcc.Download(id='home-stats-download-component-v2'),
         
         html.H1(
             "1표본 t-검정 및 정규성 검정",
@@ -57,7 +57,7 @@ layout = html.Div(
 
         # 데이터 입력을 위한 텍스트 영역
         dcc.Textarea(
-            id='home-data-input-area',
+            id='home-data-input-area-v2',
             placeholder="예:\n10.2\n11.5\n9.8\n...",
             style={'width': '100%', 'height': '200px', 'fontSize': '16px', 'borderRadius': '5px', 'border': '1px solid #ccc'}
         ),
@@ -67,7 +67,7 @@ layout = html.Div(
             html.Div([
                 html.Label("가설 평균 (H₀):", style={'marginRight': '10px'}),
                 dcc.Input(
-                    id='home-hypothesized-mean-input',
+                    id='home-hypothesized-mean-input-v2',
                     type='number',
                     placeholder='검정할 평균값',
                     style={'width': '150px'}
@@ -77,7 +77,7 @@ layout = html.Div(
             html.Div([
                 html.Label("유의 수준 (α):", style={'fontWeight': 'bold'}),
                 dcc.Slider(
-                    id='home-significance-level-input',
+                    id='home-significance-level-input-v2',
                     min=0.01,
                     max=0.1,
                     step=0.01,
@@ -92,7 +92,7 @@ layout = html.Div(
             html.Div([
                 html.Label("귀무 가설 (H₀):", style={'marginRight': '10px', 'fontWeight': 'bold'}),
                 dcc.RadioItems(
-                    id='home-hypothesis-selection-radio',
+                    id='home-hypothesis-selection-radio-v2',
                     options=[
                         {'label': '평균 = 가설 평균', 'value': 'equal'},
                         {'label': '평균 ≥ 가설 평균', 'value': 'greater_or_equal'},
@@ -108,19 +108,21 @@ layout = html.Div(
         # 분석 실행 버튼
         html.Button(
             '분석 실행',
-            id='home-run-analysis-button',
+            id='home-run-analysis-button-v2',
             n_clicks=0,
             style={'width': '100%', 'padding': '10px', 'fontSize': '18px', 'fontWeight': 'bold', 'backgroundColor': '#007BFF', 'color': 'white', 'border': 'none', 'borderRadius': '5px', 'marginTop': '10px', 'cursor': 'pointer'}
         ),
 
         # 로딩 스피너
         dcc.Loading(
+            id="loading-spinner-v2",
+            type="circle",
             children=[
                 # 이미지 다운로드 버튼 영역 추가
                 html.Div([
                     html.Button(
                         "📷 통계 결과 이미지로 다운로드",
-                        id="home-stats-download-btn",
+                        id="home-stats-download-btn-v2",
                         style={
                             'marginBottom': '10px', 'padding': '8px 15px', 'backgroundColor': '#6C757D',
                             'color': 'white', 'border': 'none', 'borderRadius': '5px', 'cursor': 'pointer',
@@ -128,26 +130,26 @@ layout = html.Div(
                         }
                     )
                 ]),
-                html.Div(id='home-stats-results-output', style={'marginTop': '20px', 'padding': '15px', 'backgroundColor': '#f9f9f9', 'borderRadius': '5px'}),
-                dcc.Graph(id='home-normality-plot-graph')
+                html.Div(id='home-stats-results-output-v2', style={'marginTop': '20px', 'padding': '15px', 'backgroundColor': '#f9f9f9', 'borderRadius': '5px'}),
+                dcc.Graph(id='home-normality-plot-graph-v2')
             ]
-        ),
+        )
     ]
 )
 
 # 콜백: 버튼 클릭 시 그래프 및 통계 업데이트
 @dash.callback(
-    [Output('home-normality-plot-graph', 'figure'), 
-     Output('home-stats-results-output', 'children'),
-     Output('home-stats-download-store', 'data'),
-     Output('home-stats-download-btn', 'style')],
-    [Input('home-run-analysis-button', 'n_clicks')],
-    [State('home-data-input-area', 'value'),
-     State('home-hypothesized-mean-input', 'value'),
-     State('home-hypothesis-selection-radio', 'value'),
-     State('home-significance-level-input', 'value')]
+    [Output('home-normality-plot-graph-v2', 'figure'), 
+     Output('home-stats-results-output-v2', 'children'),
+     Output('home-stats-download-store-v2', 'data'),
+     Output('home-stats-download-btn-v2', 'style')],
+    [Input('home-run-analysis-button-v2', 'n_clicks')],
+    [State('home-data-input-area-v2', 'value'),
+     State('home-hypothesized-mean-input-v2', 'value'),
+     State('home-hypothesis-selection-radio-v2', 'value'),
+     State('home-significance-level-input-v2', 'value')]
 )
-def update_one_sample_analysis(n_clicks, data_string, hypo_mean, null_hypothesis, alpha_level):
+def update_one_sample_analysis_v2(n_clicks, data_string, hypo_mean, null_hypothesis, alpha_level):
     # 버튼이 클릭되지 않았거나 입력이 없으면 빈 상태 반환
     if n_clicks == 0 or not data_string:
         empty_fig = go.Figure()
@@ -328,16 +330,12 @@ def update_one_sample_analysis(n_clicks, data_string, hypo_mean, null_hypothesis
     fig.update_xaxes(title_text="이론적 분위수 (Theoretical Quantiles)", row=1, col=2)
 
     # Box Plot (요청 1)
-    # plotly.express를 사용하여 box plot 생성
-    #box_fig = px.box(y=data, points="all", color_discrete_sequence=['#007BFF'])
     box_fig = px.box(y=data, color_discrete_sequence=['#007BFF'])
-    #box_fig.update_traces(name='데이터', boxmean='sd') # 평균 및 표준편차 표시, 이름 설정
     fig.add_trace(box_fig.data[0], row=2, col=1)
     fig.update_yaxes(title_text="데이터 값", row=2, col=1)
 
     # Confidence Interval Plot (요청 2)
     if not np.isnan(ci_mean[0]):
-        # Minitab 스타일로 신뢰구간을 x축에 표시
         fig.add_trace(go.Scatter(
             x=[mean],
             y=['평균'],
@@ -349,16 +347,13 @@ def update_one_sample_analysis(n_clicks, data_string, hypo_mean, null_hypothesis
                 thickness=1.5,
                 color='#007BFF'
             ),
-            mode='markers', # 마커만 표시하도록 변경
+            mode='markers',
             marker=dict(size=12, color='#007BFF', symbol='circle'),
             name=f'{conf_level_float}% CI'
         ), row=2, col=2)
 
-        # 신뢰구간 양 끝에 텍스트 추가 (add_annotation 사용)
-        # 하한값
         fig.add_annotation(x=ci_mean[0], y='평균', text=f"{ci_mean[0]:.4f}",
                            showarrow=False, yshift=-20, font=dict(color="black"), row=2, col=2)
-        # 상한값
         fig.add_annotation(x=ci_mean[1], y='평균', text=f"{ci_mean[1]:.4f}",
                            showarrow=False, yshift=-20, font=dict(color="black"), row=2, col=2)
 
@@ -376,7 +371,6 @@ def update_one_sample_analysis(n_clicks, data_string, hypo_mean, null_hypothesis
                           ),
                           annotation_position="bottom right",
                           row=2, col=1)
-            # 신뢰구간 플롯에는 수직선(vline)으로 가설 평균 표시
             fig.add_vline(x=hypo_mean_float, line_dash="dot", line_color="green", 
                           annotation=dict(
                               text=f"가설 평균: {hypo_mean}",
@@ -385,13 +379,13 @@ def update_one_sample_analysis(n_clicks, data_string, hypo_mean, null_hypothesis
                           annotation_position="top right",
                           row=2, col=2)
         except (ValueError, TypeError):
-            pass # hypo_mean이 숫자가 아니면 무시
+            pass
 
     fig.update_layout(
         title_text=f"<b>데이터 정규성 검정 결과</b><br>(Shapiro-Wilk P-value: {f'{shapiro_p:.4f}' if shapiro_p is not None else 'N/A'})",
         title_x=0.5,
         showlegend=False,
-        height=800, # 그래프 높이 조정
+        height=800,
         bargap=0.01
     )
 
@@ -399,12 +393,12 @@ def update_one_sample_analysis(n_clicks, data_string, hypo_mean, null_hypothesis
 
 # --- 분석 결과 다운로드 콜백 (html2image 사용) ---
 @dash.callback(
-    Output("home-stats-download-component", "data"),
-    Input("home-stats-download-btn", "n_clicks"),
-    State('home-stats-download-store', 'data'),
+    Output("home-stats-download-component-v2", "data"),
+    Input("home-stats-download-btn-v2", "n_clicks"),
+    State('home-stats-download-store-v2', 'data'),
     prevent_initial_call=True
 )
-def download_stats_image_final(n_clicks, component_dict):
+def download_stats_image_final_v2(n_clicks, component_dict):
     if not component_dict: return None
     
     # Dash 컴포넌트 dict를 HTML 문자열로 정밀 변환
@@ -441,7 +435,7 @@ def download_stats_image_final(n_clicks, component_dict):
 
     hti = Html2Image()
     with tempfile.TemporaryDirectory() as tmp_dir:
-        output_name = "stats_report.png"
+        output_name = "stats_report_v2.png"
         # 잘리지 않도록 넉넉한 높이 설정
         hti.screenshot(html_str=html_content, save_as=output_name, size=(640, 1000))
         
@@ -449,5 +443,5 @@ def download_stats_image_final(n_clicks, component_dict):
             with open(output_name, "rb") as f:
                 content = f.read()
             os.remove(output_name)
-            return dcc.send_bytes(content, "one_sample_t_test_report.png")
+            return dcc.send_bytes(content, "one_sample_analysis_report.png")
     return None

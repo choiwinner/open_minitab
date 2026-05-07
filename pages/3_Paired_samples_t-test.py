@@ -7,6 +7,32 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 from scipy import stats
+import os
+import tempfile
+import re
+from html2image import Html2Image
+
+# --- 헬퍼 함수: Dash 컴포넌트를 HTML 문자열로 변환 (디자인 100% 일치용) ---
+def camel_to_kebab(name):
+    return re.sub(r'(?<!^)(?=[A-Z])', '-', name).lower()
+
+def component_to_html(d):
+    if d is None: return ""
+    if isinstance(d, (str, int, float)): return str(d)
+    if isinstance(d, list): return "".join([component_to_html(c) for c in d])
+    props = d.get('props', {})
+    tag_name = d.get('type', 'div').lower()
+    style_str = ""
+    style = props.get('style')
+    if style:
+        style_parts = [f"{camel_to_kebab(k)}: {v}" for k, v in style.items()]
+        style_str = f' style="{"; ".join(style_parts)}"'
+    class_str = ""
+    class_name = props.get('className')
+    if class_name:
+        class_str = f' class="{class_name}"'
+    children = props.get('children')
+    return f"<{tag_name}{style_str}{class_str}>{component_to_html(children)}</{tag_name}>"
 
 register_page(__name__)
 
@@ -14,6 +40,9 @@ register_page(__name__)
 layout = html.Div(
     style={'fontFamily': 'Arial, sans-serif', 'maxWidth': '1000px', 'margin': 'auto', 'padding': '20px'},
     children=[
+        # 데이터 전달 및 다운로드를 위한 컴포넌트
+        dcc.Store(id='paired-stats-download-store'),
+        dcc.Download(id='paired-stats-download-component'),
         html.H1(
             "대응표본 t-검정 (Paired t-test)",
             style={'textAlign': 'center', 'color': '#333'}
@@ -97,11 +126,22 @@ layout = html.Div(
             }
         ),
 
-        # 로딩 스피너
         dcc.Loading(
             id="loading-spinner",
             type="circle",
             children=[
+                # 이미지 다운로드 버튼 영역 추가
+                html.Div([
+                    html.Button(
+                        "📷 통계 결과 이미지로 다운로드",
+                        id="paired-stats-download-btn",
+                        style={
+                            'marginBottom': '10px', 'padding': '8px 15px', 'backgroundColor': '#6C757D',
+                            'color': 'white', 'border': 'none', 'borderRadius': '5px', 'cursor': 'pointer',
+                            'display': 'none' # 초기에는 숨김
+                        }
+                    )
+                ]),
                 # 통계 결과 출력 영역
                 html.Div(id='paired-stats-results-output', style={'marginTop': '20px', 'padding': '15px', 'backgroundColor': '#f9f9f9', 'borderRadius': '5px'}),
                 # 그래프 출력 영역
@@ -114,7 +154,9 @@ layout = html.Div(
 # 콜백: 버튼 클릭 시 그래프 및 통계 업데이트
 @dash.callback(
     [Output('paired-normality-plot-graph', 'figure'),
-     Output('paired-stats-results-output', 'children')],
+     Output('paired-stats-results-output', 'children'),
+     Output('paired-stats-download-store', 'data'),
+     Output('paired-stats-download-btn', 'style')],
     [Input('paired-run-analysis-button', 'n_clicks')],
     [State('paired-data-input-area-1', 'value'),
      State('paired-data-input-area-2', 'value'),
@@ -137,7 +179,7 @@ def update_paired_sample_analysis(n_clicks, data_string_1, data_string_2, null_h
                 'font': {'size': 16, 'color': '#888'}
             }]
         )
-        return empty_fig, "분석 대기 중..."
+        return empty_fig, "분석 대기 중...", None, {'display': 'none'}
 
     # 입력된 텍스트 데이터를 파싱
     def parse_data(data_str, sample_name):
@@ -156,19 +198,19 @@ def update_paired_sample_analysis(n_clicks, data_string_1, data_string_2, null_h
     except ValueError as e:
         error_fig = go.Figure()
         error_fig.update_layout(title="입력 오류", annotations=[{'text': str(e), 'showarrow': False}])
-        return error_fig, html.Div(str(e), style={'color': 'red', 'fontWeight': 'bold'})
+        return error_fig, html.Div(str(e), style={'color': 'red', 'fontWeight': 'bold'}), None, {'display': 'none'}
 
     # 대응표본 t-검정을 위해 두 샘플의 크기가 같아야 함
     if len(data1) != len(data2):
         error_fig = go.Figure()
         error_fig.update_layout(title="데이터 개수 불일치", annotations=[{'text': '대응표본 t-검정을 위해 두 데이터의 개수가 같아야 합니다.', 'showarrow': False}])
-        return error_fig, html.Div(f"오류: 두 데이터의 개수가 일치하지 않습니다. (데이터 1: {len(data1)}개, 데이터 2: {len(data2)}개)", style={'color': 'red', 'fontWeight': 'bold'})
+        return error_fig, html.Div(f"오류: 두 데이터의 개수가 일치하지 않습니다. (데이터 1: {len(data1)}개, 데이터 2: {len(data2)}개)", style={'color': 'red', 'fontWeight': 'bold'}), None, {'display': 'none'}
 
     # 최소 2개 이상의 데이터 쌍 필요
     if len(data1) < 2:
         error_fig = go.Figure()
         error_fig.update_layout(title="데이터 부족", annotations=[{'text': '분석을 위해 2개 이상의 데이터 쌍이 필요합니다.', 'showarrow': False}])
-        return error_fig, html.Div(f"오류: 2개 이상의 데이터 쌍이 필요합니다. (현재 {len(data1)}개)", style={'color': 'red', 'fontWeight': 'bold'})
+        return error_fig, html.Div(f"오류: 2개 이상의 데이터 쌍이 필요합니다. (현재 {len(data1)}개)", style={'color': 'red', 'fontWeight': 'bold'}), None, {'display': 'none'}
 
     # 유의수준 파싱
     try:
@@ -180,7 +222,7 @@ def update_paired_sample_analysis(n_clicks, data_string_1, data_string_2, null_h
     except (ValueError, TypeError) as e:
         error_fig = go.Figure()
         error_fig.update_layout(title="입력 오류", annotations=[{'text': f'유의 수준 값 오류: {e}', 'showarrow': False}])
-        return error_fig, html.Div(f"오류: 유의 수준이 올바르지 않습니다. (입력값: {alpha_level})", style={'color': 'red', 'fontWeight': 'bold'})
+        return error_fig, html.Div(f"오류: 유의 수준이 올바르지 않습니다. (입력값: {alpha_level})", style={'color': 'red', 'fontWeight': 'bold'}), None, {'display': 'none'}
 
     conf_level_float = round((1 - alpha_level_float) * 100, 1)
 
@@ -205,7 +247,7 @@ def update_paired_sample_analysis(n_clicks, data_string_1, data_string_2, null_h
             error_fig = go.Figure()
             error_fig.update_layout(title="정규성 검정 실패", annotations=[{'text': f'데이터의 차이가 정규분포를 따르지 않습니다 (p={shapiro_p:.4f}).', 'showarrow': False}])
             error_message = html.Div(f"오류: 데이터의 차이가 정규분포를 따르지 않아 분석을 중단합니다 (Shapiro-Wilk p-value: {shapiro_p:.4f}). 대응표본 t-검정은 차이의 정규성을 가정합니다.", style={'color': 'red', 'fontWeight': 'bold'})
-            return error_fig, error_message
+            return error_fig, error_message, None, {'display': 'none'}
 
     # --- Paired t-Test ---
 
@@ -388,4 +430,59 @@ def update_paired_sample_analysis(n_clicks, data_string_1, data_string_2, null_h
         bargap=0.01
     )
 
-    return fig, stats_div
+    return fig, stats_div, stats_div, {'display': 'inline-block', 'marginBottom': '10px', 'padding': '8px 15px', 'backgroundColor': '#6C757D', 'color': 'white', 'border': 'none', 'borderRadius': '5px', 'marginTop': '10px', 'cursor': 'pointer'}
+
+# --- 분석 결과 다운로드 콜백 (html2image 사용) ---
+@dash.callback(
+    Output("paired-stats-download-component", "data"),
+    Input("paired-stats-download-btn", "n_clicks"),
+    State('paired-stats-download-store', 'data'),
+    prevent_initial_call=True
+)
+def download_stats_image_final_paired(n_clicks, component_dict):
+    if not component_dict: return None
+    
+    # Dash 컴포넌트 dict를 HTML 문자열로 정밀 변환
+    inner_html = component_to_html(component_dict)
+    
+    # 캡처를 위한 전체 HTML 구성 (Bootstrap 포함)
+    html_content = f"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+        <style>
+            body {{ 
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                padding: 40px; 
+                background-color: white; 
+                width: 600px;
+            }}
+            .stats-container {{
+                padding: 20px;
+                background-color: #f9f9f9;
+                border-radius: 5px;
+                border: 1px solid #eee;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="stats-container">
+            {inner_html}
+        </div>
+    </body>
+    </html>
+    """
+
+    hti = Html2Image()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        output_name = "paired_stats_report.png"
+        # 잘리지 않도록 넉넉한 높이 설정
+        hti.screenshot(html_str=html_content, save_as=output_name, size=(640, 1000))
+        
+        if os.path.exists(output_name):
+            with open(output_name, "rb") as f:
+                content = f.read()
+            os.remove(output_name)
+            return dcc.send_bytes(content, "paired_t_test_report.png")
+    return None

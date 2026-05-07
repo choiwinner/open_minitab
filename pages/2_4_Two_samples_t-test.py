@@ -12,7 +12,8 @@ import tempfile
 import re
 from html2image import Html2Image
 
-register_page(__name__)
+# 새 페이지 등록 (기존 페이지와 구분)
+register_page(__name__, name="2표본 t-검정 (stats_div 다운로드)")
 
 # --- 헬퍼 함수: Dash 컴포넌트를 HTML 문자열로 변환 (디자인 100% 일치용) ---
 def camel_to_kebab(name):
@@ -36,13 +37,13 @@ def component_to_html(d):
     children = props.get('children')
     return f"<{tag_name}{style_str}{class_str}>{component_to_html(children)}</{tag_name}>"
 
-# 앱 레이아웃 정의
+# 앱 레이아웃 정의 (기존 레이아웃 유지 + 다운로드 컴포넌트 추가)
 layout = html.Div(
     style={'fontFamily': 'Arial, sans-serif', 'maxWidth': '1000px', 'margin': 'auto', 'padding': '20px'},
     children=[
         # 데이터 전달 및 다운로드를 위한 컴포넌트
-        dcc.Store(id='stats-download-store'),
-        dcc.Download(id='stats-download-component'),
+        dcc.Store(id='stats-download-store-v4'),
+        dcc.Download(id='stats-download-component-v4'),
 
         html.H1(
             "2표본 t-검정 및 정규성 검정", # Updated title
@@ -59,7 +60,7 @@ layout = html.Div(
             html.Div([
                 html.Label("데이터 1 (Sample 1):", style={'fontWeight': 'bold', 'marginBottom': '5px'}),
                 dcc.Textarea(
-                    id='data-input-area-1',
+                    id='data-input-area-1-v4',
                     placeholder="예:\n10.2\n11.5\n9.8\n...",
                     style={'width': '100%', 'height': '150px', 'fontSize': '16px', 'borderRadius': '5px', 'border': '1px solid #ccc'}
                 ),
@@ -68,7 +69,7 @@ layout = html.Div(
             html.Div([
                 html.Label("데이터 2 (Sample 2):", style={'fontWeight': 'bold', 'marginBottom': '5px'}),
                 dcc.Textarea(
-                    id='data-input-area-2',
+                    id='data-input-area-2-v4',
                     placeholder="예:\n9.5\n10.8\n10.0\n...",
                     style={'width': '100%', 'height': '150px', 'fontSize': '16px', 'borderRadius': '5px', 'border': '1px solid #ccc'}
                 ),
@@ -80,7 +81,7 @@ layout = html.Div(
             html.Div([
                 html.Label("유의 수준 (α):", style={'fontWeight': 'bold'}),
                 dcc.Slider(
-                    id='significance-level-input',
+                    id='significance-level-input-v4',
                     min=0.01,
                     max=0.1,
                     step=0.01,
@@ -95,7 +96,7 @@ layout = html.Div(
             html.Div([
                 html.Label("귀무 가설 (Null Hypothesis):", style={'marginRight': '10px', 'fontWeight': 'bold'}),
                 dcc.RadioItems(
-                    id='hypothesis-selection-radio',
+                    id='hypothesis-selection-radio-v4',
                     options=[
                         {'label': '평균 1 = 평균 2', 'value': 'equal'},
                         {'label': '평균 1 ≤ 평균 2', 'value': 'less_or_equal'},
@@ -110,7 +111,7 @@ layout = html.Div(
             html.Div([
                 html.Label("t-검정 유형:", style={'marginRight': '10px', 'fontWeight': 'bold'}),
                 dcc.RadioItems(
-                    id='ttest-type-radio',
+                    id='ttest-type-radio-v4',
                     options=[
                         {'label': "Welch's t-test (등분산 가정 안함)", 'value': 'welch'},
                         {'label': 'Pooled t-test (등분산 가정함)', 'value': 'pooled'},
@@ -125,7 +126,7 @@ layout = html.Div(
         # 분석 실행 버튼
         html.Button(
             '분석 실행',
-            id='run-analysis-button',
+            id='run-analysis-button-v4',
             n_clicks=0,
             style={
                 'width': '100%',
@@ -143,14 +144,14 @@ layout = html.Div(
 
         # 로딩 스피너
         dcc.Loading(
-            id="loading-spinner",
+            id="loading-spinner-v4",
             type="circle",
             children=[
                 # 이미지 다운로드 버튼 영역 추가
                 html.Div([
                     html.Button(
                         "📷 통계 결과 이미지로 다운로드",
-                        id="stats-download-btn",
+                        id="stats-download-btn-v4",
                         style={
                             'marginBottom': '10px', 'padding': '8px 15px', 'backgroundColor': '#6C757D',
                             'color': 'white', 'border': 'none', 'borderRadius': '5px', 'cursor': 'pointer',
@@ -159,9 +160,9 @@ layout = html.Div(
                     )
                 ]),
                 # 통계 결과 출력 영역
-                html.Div(id='stats-results-output', style={'marginTop': '20px', 'padding': '15px', 'backgroundColor': '#f9f9f9', 'borderRadius': '5px'}),
+                html.Div(id='stats-results-output-v4', style={'marginTop': '20px', 'padding': '15px', 'backgroundColor': '#f9f9f9', 'borderRadius': '5px'}),
                 # 그래프 출력 영역
-                dcc.Graph(id='normality-plot-graph')
+                dcc.Graph(id='normality-plot-graph-v4')
             ]
         ) # This closes the dcc.Loading component
     ]
@@ -169,16 +170,16 @@ layout = html.Div(
 
 # 콜백: 버튼 클릭 시 그래프 및 통계 업데이트
 @dash.callback(
-    [Output('normality-plot-graph', 'figure'),
-     Output('stats-results-output', 'children'),
-     Output('stats-download-store', 'data'),
-     Output('stats-download-btn', 'style')],
-    [Input('run-analysis-button', 'n_clicks')],
-    [State('data-input-area-1', 'value'),
-     State('data-input-area-2', 'value'),
-     State('hypothesis-selection-radio', 'value'),
-     State('significance-level-input', 'value'),
-     State('ttest-type-radio', 'value')]
+    [Output('normality-plot-graph-v4', 'figure'),
+     Output('stats-results-output-v4', 'children'),
+     Output('stats-download-store-v4', 'data'),
+     Output('stats-download-btn-v4', 'style')],
+    [Input('run-analysis-button-v4', 'n_clicks')],
+    [State('data-input-area-1-v4', 'value'),
+     State('data-input-area-2-v4', 'value'),
+     State('hypothesis-selection-radio-v4', 'value'),
+     State('significance-level-input-v4', 'value'),
+     State('ttest-type-radio-v4', 'value')]
 )
 def update_two_sample_analysis(n_clicks, data_string_1, data_string_2, null_hypothesis, alpha_level, ttest_type):
     # 버튼이 클릭되지 않았거나 입력이 없으면 빈 상태 반환
@@ -555,14 +556,14 @@ def update_two_sample_analysis(n_clicks, data_string_1, data_string_2, null_hypo
         bargap=0.01
     )
 
-   # 분석이 완료된 후 다운로드 버튼을 표시하고 stats_div 데이터를 Store에 전달
+    # 분석이 완료된 후 다운로드 버튼을 표시하고 stats_div 데이터를 Store에 전달
     return fig, stats_div, stats_div, {'display': 'inline-block', 'marginBottom': '10px', 'padding': '8px 15px', 'backgroundColor': '#6C757D', 'color': 'white', 'border': 'none', 'borderRadius': '5px', 'cursor': 'pointer'}
 
 # --- 분석 결과 다운로드 콜백 (html2image 사용) ---
 @dash.callback(
-    Output("stats-download-component", "data"),
-    Input("stats-download-btn", "n_clicks"),
-    State('stats-download-store', 'data'),
+    Output("stats-download-component-v4", "data"),
+    Input("stats-download-btn-v4", "n_clicks"),
+    State('stats-download-store-v4', 'data'),
     prevent_initial_call=True
 )
 def download_stats_image_final(n_clicks, component_dict):
