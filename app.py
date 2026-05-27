@@ -5,7 +5,10 @@ import os
 
 UPLOAD_FOLDER_ROOT = "uploads"
 
-app = Dash(__name__, use_pages=True, external_stylesheets=[dbc.themes.BOOTSTRAP])
+app = Dash(__name__, use_pages=True, 
+           suppress_callback_exceptions=True,
+           external_stylesheets=[dbc.themes.BOOTSTRAP],
+           external_scripts=['/assets/01_config.js', 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js'])
 
 SIDEBAR_STYLE = {
     "position": "fixed",
@@ -14,11 +17,11 @@ SIDEBAR_STYLE = {
     "bottom": 0,
     "width": "16rem",
     "padding": "2rem 1rem",
-    "background-color": "#f8f9fa",
+    "backgroundColor": "#f8f9fa",
 }
 
 CONTENT_STYLE = {
-    "margin-left": "16rem",
+    "marginLeft": "16rem",
     "padding": "2rem 1rem",
 }
 
