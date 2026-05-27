@@ -120,7 +120,22 @@ layout = html.Div(
                     value='pooled', # Default to pooled test
                     inline=True
                 )
-            ], style={'display': 'block', 'marginTop': '15px'})
+            ], style={'display': 'block', 'marginTop': '15px'}),
+
+            # 보고서 스타일 선택 추가
+            html.Div([
+                html.Label("보고서 스타일:", style={'marginRight': '10px', 'fontWeight': 'bold'}),
+                dcc.RadioItems(
+                    id='report-style-radio-v4',
+                    options=[
+                        {'label': '전통적 통계 분석 스타일', 'value': 'traditional'},
+                        {'label': '실무형 비즈니스 인사이트 스타일', 'value': 'practical'}
+                    ],
+                    value='traditional',
+                    inline=True,
+                    style={'marginTop': '5px'}
+                )
+            ], style={'display': 'block', 'marginTop': '15px', 'padding': '10px', 'backgroundColor': '#f0f4f8', 'borderRadius': '5px'})
         ], style={'marginTop': '15px', 'marginBottom': '10px'}),
 
         # 분석 실행 버튼
@@ -179,9 +194,10 @@ layout = html.Div(
      State('data-input-area-2-v4', 'value'),
      State('hypothesis-selection-radio-v4', 'value'),
      State('significance-level-input-v4', 'value'),
-     State('ttest-type-radio-v4', 'value')]
+     State('ttest-type-radio-v4', 'value'),
+     State('report-style-radio-v4', 'value')]
 )
-def update_two_sample_analysis(n_clicks, data_string_1, data_string_2, null_hypothesis, alpha_level, ttest_type):
+def update_two_sample_analysis(n_clicks, data_string_1, data_string_2, null_hypothesis, alpha_level, ttest_type, report_style):
     # 버튼이 클릭되지 않았거나 입력이 없으면 빈 상태 반환
     if n_clicks == 0 or not (data_string_1 or data_string_2):
         empty_fig = go.Figure()
@@ -352,76 +368,123 @@ def update_two_sample_analysis(n_clicks, data_string_1, data_string_2, null_hypo
     # --- 통계 결과 Div 생성 ---
     stats_div_children = []
 
-    # Summary Statistics for Sample 1
-    stats_div_children.append(html.H4("요약 통계량 (Sample 1)", style={'borderBottom': '1px solid #ddd', 'paddingBottom': '5px'}))
-    stats_div_children.append(html.Table([
-        html.Tr([html.Td("데이터 개수 (N)"), html.Td(f"{results['Sample 1']['n']}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
-        html.Tr([html.Td("평균 (Mean)"), html.Td(f"{results['Sample 1']['mean']:.4f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
-        html.Tr([html.Td("표준편차 (StDev)"), html.Td(f"{results['Sample 1']['std']:.4f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
-    ], style={'width': '300px'}))
-    shapiro_p_text_1 = f"{results['Sample 1']['shapiro_p']:.4f}" if results['Sample 1']['shapiro_p'] is not None else 'N < 3'
-    stats_div_children.append(html.H5("정규성 검정 (Shapiro-Wilk)", style={'marginTop': '10px'}))
-    stats_div_children.append(html.P(f"P-value: {shapiro_p_text_1}"))
-    stats_div_children.append(html.P(results['Sample 1']['shapiro_conclusion'], style=results['Sample 1']['shapiro_conclusion_style']))
+    if report_style == 'practical':
+        # [실무형 보고서 스타일]
+        stats_div_children.append(html.H4("🏭 실무형 분석 인사이트 리포트", style={'borderBottom': '2px solid #007BFF', 'paddingBottom': '10px', 'color': '#007BFF'}))
+        
+        # 1. 데이터 건전성 검증
+        stats_div_children.append(html.H5("✅ 데이터 분석 전제 조건 검증", style={'marginTop': '20px'}))
+        normality_status = "정상" if results['Sample 1']['shapiro_p'] > 0.05 and results['Sample 2']['shapiro_p'] > 0.05 else "주의"
+        variance_status = "동일" if equal_var_flag else "다름"
+        
+        check_list = [
+            html.Li(f"데이터 분포(정규성): {normality_status} (분석에 적합한 데이터 분포를 가지고 있습니다.)" if normality_status == "정상" else f"데이터 분포(정규성): {normality_status} (일부 데이터가 정규분포에서 벗어나 있으나, 표본 크기를 고려하여 분석을 진행합니다.)"),
+            html.Li(f"데이터 산포(등분산): {variance_status} (두 그룹의 데이터 퍼짐 정도가 {variance_status} 것으로 판단되어 그에 맞는 분석 기법을 적용했습니다.)")
+        ]
+        stats_div_children.append(html.Ul(check_list, style={'paddingLeft': '20px', 'lineHeight': '1.6'}))
 
-    # Summary Statistics for Sample 2
-    stats_div_children.append(html.H4("요약 통계량 (Sample 2)", style={'marginTop': '20px', 'borderBottom': '1px solid #ddd', 'paddingBottom': '5px'}))
-    stats_div_children.append(html.Table([
-        html.Tr([html.Td("데이터 개수 (N)"), html.Td(f"{results['Sample 2']['n']}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
-        html.Tr([html.Td("평균 (Mean)"), html.Td(f"{results['Sample 2']['mean']:.4f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
-        html.Tr([html.Td("표준편차 (StDev)"), html.Td(f"{results['Sample 2']['std']:.4f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
-    ], style={'width': '300px'}))
-    shapiro_p_text_2 = f"{results['Sample 2']['shapiro_p']:.4f}" if results['Sample 2']['shapiro_p'] is not None else 'N < 3'
-    stats_div_children.append(html.H5("정규성 검정 (Shapiro-Wilk)", style={'marginTop': '10px'}))
-    stats_div_children.append(html.P(f"P-value: {shapiro_p_text_2}"))
-    stats_div_children.append(html.P(results['Sample 2']['shapiro_conclusion'], style=results['Sample 2']['shapiro_conclusion_style']))
+        # 2. 핵심 분석 결과 (현장 언어로 번역)
+        stats_div_children.append(html.H5("📈 공정 유의차 분석 결과", style={'marginTop': '20px'}))
+        
+        diff_val = mean1 - mean2
+        diff_percent = (abs(diff_val) / mean2 * 100) if mean2 != 0 else 0
+        
+        if t_p_value < alpha_level_float:
+            result_main = f"두 공정(그룹) 간에는 통계적으로 **명확한 차이**가 존재합니다."
+            result_insight = f"이 차이는 단순한 데이터 흔들림(산포)에 의한 우연일 가능성이 {t_p_value*100:.2f}% 미만으로 매우 낮습니다. 즉, 현재 관측된 {abs(diff_val):.4f} ({diff_percent:.1f}%)의 차이는 실무적으로 유의미한 변화로 간주할 수 있습니다."
+            conclusion_style = {'backgroundColor': '#e8f5e9', 'padding': '15px', 'borderRadius': '5px', 'borderLeft': '5px solid #2e7d32'}
+        else:
+            result_main = f"두 공정(그룹) 간에는 통계적으로 **유의미한 차이가 없습니다**."
+            result_insight = f"현재 관측된 {abs(diff_val):.4f}의 차이는 데이터의 일상적인 변동 범위 내에 있습니다. 즉, 실제 공정상의 변화라기보다 우연히 발생했을 가능성이 높으므로 추가 조치보다는 현재 수준 유지를 권장합니다."
+            conclusion_style = {'backgroundColor': '#fff3e0', 'padding': '15px', 'borderRadius': '5px', 'borderLeft': '5px solid #ef6c00'}
 
-    # Hypothesis Test Results
-    stats_div_children.append(html.H4("가설 검정 결과 (Hypothesis Test Result)", style={'marginTop': '20px', 'borderBottom': '1px solid #ddd', 'paddingBottom': '5px'}))
-    
-    # 가설 정의
-    null_hypo_text = {
-        'equal': "귀무가설 (H0): 평균 1 = 평균 2",
-        'less_or_equal': "귀무가설 (H0): 평균 1 ≤ 평균 2",
-        'greater_or_equal': "귀무가설 (H0): 평균 1 ≥ 평균 2"
-    }
-    alt_hypo_text = {
-        'equal': "대립가설 (H1): 평균 1 ≠ 평균 2",
-        'less_or_equal': "대립가설 (H1): 평균 1 > 평균 2",
-        'greater_or_equal': "대립가설 (H1): 평균 1 < 평균 2"
-    }
-    stats_div_children.append(html.P(null_hypo_text[null_hypothesis]))
-    stats_div_children.append(html.P(alt_hypo_text[null_hypothesis]))
-    stats_div_children.append(html.P(f"유의수준 (α): {alpha_level_float}"))
+        stats_div_children.append(html.Div([
+            html.P(html.B(result_main), style={'fontSize': '1.1rem'}),
+            html.P(result_insight)
+        ], style=conclusion_style))
 
-    # 등분산 검정 결과가 있으면 추가
-    stats_div_children.extend(variance_test_results)
+        # 3. 상세 지표 요약
+        stats_div_children.append(html.H5("🔍 상세 비교 지표", style={'marginTop': '20px'}))
+        stats_div_children.append(html.Table([
+            html.Tr([html.Td("평균 차이 (Δ)"), html.Td(f"{diff_val:.4f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
+            html.Tr([html.Td("차이의 신뢰구간"), html.Td(f"({ci_diff[0]:.4f} ~ {ci_diff[1]:.4f})", style={'textAlign': 'right'})]),
+            html.Tr([html.Td("P-Value (확률값)"), html.Td(f"{t_p_value:.4f}", style={'textAlign': 'right'})]),
+        ], style={'width': '100%', 'marginTop': '10px', 'borderCollapse': 'collapse'}))
+        
+        stats_div_children.append(html.P("* 본 리포트는 설정된 유의수준(α=0.05)을 기준으로 AI가 자동 생성한 분석 의견입니다.", style={'fontSize': '0.8rem', 'color': '#888', 'marginTop': '20px'}))
 
-    # 가설 검정 결론
-    if t_p_value < alpha_level_float:
-        conclusion_text = f"결론: P-값 ({t_p_value:.4f})이 유의수준 ({alpha_level_float})보다 작으므로, '{null_hypo_text[null_hypothesis]}' 을 기각합니다."
-        conclusion_style = {'color': 'red', 'fontWeight': 'bold', 'marginTop': '10px'}
     else:
-        conclusion_text = f"결론: P-값 ({t_p_value:.4f})이 유의수준 ({alpha_level_float})보다 크거나 같으므로, '{null_hypo_text[null_hypothesis]}' 을 기각할 수 없습니다."
-        conclusion_style = {'color': 'green', 'fontWeight': 'bold', 'marginTop': '10px'}
-    
-    stats_div_children.append(html.P(f"수행된 검정: {ttest_method_str}", style={'fontStyle': 'italic', 'color': '#555', 'marginTop': '10px'}))
-    stats_div_children.append(html.Table([
-        html.Tr([html.Td("평균 1"), html.Td(f"{results['Sample 1']['mean']:.4f}", style={'textAlign': 'right'})]),
-        html.Tr([html.Td("평균 2"), html.Td(f"{results['Sample 2']['mean']:.4f}", style={'textAlign': 'right'})]),
-        html.Tr([html.Td("평균 차이 (Mean Diff)"), html.Td(f"{results['Sample 1']['mean'] - results['Sample 2']['mean']:.4f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
-        html.Tr([html.Td("t-Value"), html.Td(f"{t_stat:.3f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
-        html.Tr([html.Td("P-Value"), html.Td(f"{t_p_value:.4f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
-        html.Tr([html.Td("자유도 (DF)"), html.Td(f"{df_test:.2f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
-    ], style={'width': '300px', 'marginTop': '10px'}))
+        # [전통적 통계 분석 스타일] - 기존 로직
+        # Summary Statistics for Sample 1
+        stats_div_children.append(html.H4("요약 통계량 (Sample 1)", style={'borderBottom': '1px solid #ddd', 'paddingBottom': '5px'}))
+        stats_div_children.append(html.Table([
+            html.Tr([html.Td("데이터 개수 (N)"), html.Td(f"{results['Sample 1']['n']}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
+            html.Tr([html.Td("평균 (Mean)"), html.Td(f"{results['Sample 1']['mean']:.4f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
+            html.Tr([html.Td("표준편차 (StDev)"), html.Td(f"{results['Sample 1']['std']:.4f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
+        ], style={'width': '300px'}))
+        shapiro_p_text_1 = f"{results['Sample 1']['shapiro_p']:.4f}" if results['Sample 1']['shapiro_p'] is not None else 'N < 3'
+        stats_div_children.append(html.H5("정규성 검정 (Shapiro-Wilk)", style={'marginTop': '10px'}))
+        stats_div_children.append(html.P(f"P-value: {shapiro_p_text_1}"))
+        stats_div_children.append(html.P(results['Sample 1']['shapiro_conclusion'], style=results['Sample 1']['shapiro_conclusion_style']))
 
-    stats_div_children.append(html.P(conclusion_text, style=conclusion_style))
+        # Summary Statistics for Sample 2
+        stats_div_children.append(html.H4("요약 통계량 (Sample 2)", style={'marginTop': '20px', 'borderBottom': '1px solid #ddd', 'paddingBottom': '5px'}))
+        stats_div_children.append(html.Table([
+            html.Tr([html.Td("데이터 개수 (N)"), html.Td(f"{results['Sample 2']['n']}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
+            html.Tr([html.Td("평균 (Mean)"), html.Td(f"{results['Sample 2']['mean']:.4f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
+            html.Tr([html.Td("표준편차 (StDev)"), html.Td(f"{results['Sample 2']['std']:.4f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
+        ], style={'width': '300px'}))
+        shapiro_p_text_2 = f"{results['Sample 2']['shapiro_p']:.4f}" if results['Sample 2']['shapiro_p'] is not None else 'N < 3'
+        stats_div_children.append(html.H5("정규성 검정 (Shapiro-Wilk)", style={'marginTop': '10px'}))
+        stats_div_children.append(html.P(f"P-value: {shapiro_p_text_2}"))
+        stats_div_children.append(html.P(results['Sample 2']['shapiro_conclusion'], style=results['Sample 2']['shapiro_conclusion_style']))
 
-    stats_div_children.append(html.H5(f"{conf_level_float}% 신뢰 구간 (Confidence Interval for Difference)", style={'marginTop': '15px'}))
-    stats_div_children.append(html.P([
-        ci_diff_note,
-        html.B(f"({ci_diff[0]:.4f}, {ci_diff[1]:.4f})") if not np.isnan(ci_diff[0]) else ""
-    ]))
+        # Hypothesis Test Results
+        stats_div_children.append(html.H4("가설 검정 결과 (Hypothesis Test Result)", style={'marginTop': '20px', 'borderBottom': '1px solid #ddd', 'paddingBottom': '5px'}))
+        
+        # 가설 정의
+        null_hypo_text = {
+            'equal': "귀무가설 (H0): 평균 1 = 평균 2",
+            'less_or_equal': "귀무가설 (H0): 평균 1 ≤ 평균 2",
+            'greater_or_equal': "귀무가설 (H0): 평균 1 ≥ 평균 2"
+        }
+        alt_hypo_text = {
+            'equal': "대립가설 (H1): 평균 1 ≠ 평균 2",
+            'less_or_equal': "대립가설 (H1): 평균 1 > 평균 2",
+            'greater_or_equal': "대립가설 (H1): 평균 1 < 평균 2"
+        }
+        stats_div_children.append(html.P(null_hypo_text[null_hypothesis]))
+        stats_div_children.append(html.P(alt_hypo_text[null_hypothesis]))
+        stats_div_children.append(html.P(f"유의수준 (α): {alpha_level_float}"))
+
+        # 등분산 검정 결과가 있으면 추가
+        stats_div_children.extend(variance_test_results)
+
+        # 가설 검정 결론
+        if t_p_value < alpha_level_float:
+            conclusion_text = f"결론: P-값 ({t_p_value:.4f})이 유의수준 ({alpha_level_float})보다 작으므로, '{null_hypo_text[null_hypothesis]}' 을 기각합니다."
+            conclusion_style = {'color': 'red', 'fontWeight': 'bold', 'marginTop': '10px'}
+        else:
+            conclusion_text = f"결론: P-값 ({t_p_value:.4f})이 유의수준 ({alpha_level_float})보다 크거나 같으므로, '{null_hypo_text[null_hypothesis]}' 을 기각할 수 없습니다."
+            conclusion_style = {'color': 'green', 'fontWeight': 'bold', 'marginTop': '10px'}
+        
+        stats_div_children.append(html.P(f"수행된 검정: {ttest_method_str}", style={'fontStyle': 'italic', 'color': '#555', 'marginTop': '10px'}))
+        stats_div_children.append(html.Table([
+            html.Tr([html.Td("평균 1"), html.Td(f"{results['Sample 1']['mean']:.4f}", style={'textAlign': 'right'})]),
+            html.Tr([html.Td("평균 2"), html.Td(f"{results['Sample 2']['mean']:.4f}", style={'textAlign': 'right'})]),
+            html.Tr([html.Td("평균 차이 (Mean Diff)"), html.Td(f"{results['Sample 1']['mean'] - results['Sample 2']['mean']:.4f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
+            html.Tr([html.Td("t-Value"), html.Td(f"{t_stat:.3f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
+            html.Tr([html.Td("P-Value"), html.Td(f"{t_p_value:.4f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
+            html.Tr([html.Td("자유도 (DF)"), html.Td(f"{df_test:.2f}", style={'textAlign': 'right', 'fontWeight': 'bold'})]),
+        ], style={'width': '300px', 'marginTop': '10px'}))
+
+        stats_div_children.append(html.P(conclusion_text, style=conclusion_style))
+
+        stats_div_children.append(html.H5(f"{conf_level_float}% 신뢰 구간 (Confidence Interval for Difference)", style={'marginTop': '15px'}))
+        stats_div_children.append(html.P([
+            ci_diff_note,
+            html.B(f"({ci_diff[0]:.4f}, {ci_diff[1]:.4f})") if not np.isnan(ci_diff[0]) else ""
+        ]))
 
     stats_div = html.Div(stats_div_children)
 

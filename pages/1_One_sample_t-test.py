@@ -12,7 +12,7 @@ import tempfile
 import re
 from html2image import Html2Image
 
-register_page(__name__, path='/')
+register_page(__name__)
 
 # --- 헬퍼 함수: Dash 컴포넌트를 HTML 문자열로 변환 (디자인 100% 일치용) ---
 def camel_to_kebab(name):
