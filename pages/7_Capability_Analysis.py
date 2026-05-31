@@ -209,17 +209,41 @@ layout = html.Div(
                     ], style={'marginBottom': '10px'}),
                     
                     html.Div([
-                        html.Span("계급 개수 (Bins): ", style={'marginRight': '10px'}),
-                        dcc.Input(
-                            id='capa-bin-count',
-                            type='number',
-                            value=25,
-                            min=2,
-                            step=1,
-                            disabled=True,
-                            style={'width': '80px', 'padding': '5px', 'borderRadius': '4px', 'border': '1px solid #ccc'}
-                        ),
-                        html.Span(" (2 이상의 정수)", style={'fontSize': '12px', 'color': '#666', 'marginLeft': '5px'})
+                        html.Div([
+                            html.Span("계급 최소값 (Min): ", style={'display': 'inline-block', 'width': '120px', 'marginRight': '10px'}),
+                            dcc.Input(
+                                id='capa-bin-min',
+                                type='number',
+                                placeholder="자동 (비워둠)",
+                                disabled=True,
+                                style={'width': '110px', 'padding': '5px', 'borderRadius': '4px', 'border': '1px solid #ccc'}
+                            )
+                        ], style={'marginBottom': '8px'}),
+                        
+                        html.Div([
+                            html.Span("계급 최대값 (Max): ", style={'display': 'inline-block', 'width': '120px', 'marginRight': '10px'}),
+                            dcc.Input(
+                                id='capa-bin-max',
+                                type='number',
+                                placeholder="자동 (비워둠)",
+                                disabled=True,
+                                style={'width': '110px', 'padding': '5px', 'borderRadius': '4px', 'border': '1px solid #ccc'}
+                            )
+                        ], style={'marginBottom': '8px'}),
+                        
+                        html.Div([
+                            html.Span("계급 개수 (Bins): ", style={'display': 'inline-block', 'width': '120px', 'marginRight': '10px'}),
+                            dcc.Input(
+                                id='capa-bin-count',
+                                type='number',
+                                value=25,
+                                min=2,
+                                step=1,
+                                disabled=True,
+                                style={'width': '110px', 'padding': '5px', 'borderRadius': '4px', 'border': '1px solid #ccc'}
+                            ),
+                            html.Span(" (2 이상의 정수)", style={'fontSize': '12px', 'color': '#666', 'marginLeft': '5px'})
+                        ])
                     ])
                 ], style={'width': '48%', 'display': 'inline-block', 'verticalAlign': 'top'}),
                 
@@ -290,10 +314,12 @@ layout = html.Div(
      State('capa-th-fair', 'value'),
      State('capa-th-poor', 'value'),
      State('capa-bin-mode', 'value'),
+     State('capa-bin-min', 'value'),
+     State('capa-bin-max', 'value'),
      State('capa-bin-count', 'value'),
      State('capa-y-mode', 'value')]
 )
-def run_capability_analysis(n_clicks, data_str, d_size, lsl, usl, target, th_mode, th_vg, th_g, th_f, th_p, bin_mode, bin_count, y_mode):
+def run_capability_analysis(n_clicks, data_str, d_size, lsl, usl, target, th_mode, th_vg, th_g, th_f, th_p, bin_mode, bin_min, bin_max, bin_count, y_mode):
     if n_clicks == 0 or not data_str:
         fig = go.Figure()
         fig.update_layout(title="데이터를 입력하고 '공정 능력 분석 실행' 버튼을 클릭하세요.")
@@ -561,117 +587,129 @@ def run_capability_analysis(n_clicks, data_str, d_size, lsl, usl, target, th_mod
     ])
 
     # 8. Plotly 차트 구성
-    # 데이터 분포에 따른 X축 영역 계산 (여유 확보)
-    x_min = min(lsl, np.min(data))
-    x_max = max(usl, np.max(data))
+    # 계급 구간 결정 우선 수행
+    if bin_mode == 'custom':
+        bin_min_val = float(bin_min) if bin_min is not None else np.min(data)
+        bin_max_val = float(bin_max) if bin_max is not None else np.max(data)
+        bin_count_val = int(bin_count) if bin_count is not None and int(bin_count) >= 2 else 25
+        bin_edges = np.linspace(bin_min_val, bin_max_val, bin_count_val + 1)
+    else:
+        # auto 모드
+        _, bin_edges = np.histogram(data, bins='auto')
+        
+    bin_width = bin_edges[1] - bin_edges[0]
+    bin_centers = bin_edges[:-1] + bin_width / 2
+
+    # 데이터 분포에 따른 X축 영역 계산 (계급 구간 범위도 함께 고려하여 여유 확보)
+    x_min = min(lsl, np.min(data), bin_edges[0])
+    x_max = max(usl, np.max(data), bin_edges[-1])
     span = x_max - x_min
     margin = span * 0.15 if span > 0 else 1.0
     x_range = [x_min - margin, x_max + margin]
     x_eval = np.linspace(x_range[0], x_range[1], 300)
 
-    # 계급 구간수 결정
-    bins_val = None
-    if bin_mode == 'custom' and bin_count is not None:
-        try:
-            bins_val = int(bin_count)
-            if bins_val < 2:
-                bins_val = None
-        except:
-            bins_val = None
+    # 각 계급의 실제 빈도수 계산
+    counts, _ = np.histogram(data, bins=bin_edges)
 
     # Subplots 또는 단일 플롯 위에 히스토그램 및 정규곡선 중첩
+    fig = go.Figure()
+
+    # 단기 (Within) 및 장기 (Overall) 분포 계산
+    y_within = stats.norm.pdf(x_eval, mean, sd_within) if sd_within > 0 else np.zeros_like(x_eval)
+    y_overall = stats.norm.pdf(x_eval, mean, sd_overall) if sd_overall > 0 else np.zeros_like(x_eval)
+
+    # 빈도수 모드일 경우 정규분포 적합 곡선을 데이터 개수와 빈 너비에 비례하게 스케일링
     if y_mode == 'count':
-        # 빈도수 기준: 이중 Y축 구성
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
-        
-        # 히스토그램 추가 (기본 빈도수(count), secondary_y=False)
-        fig.add_trace(go.Histogram(
-            x=data,
-            histnorm='',
-            nbinsx=bins_val,
+        scale_factor = n * bin_width
+        y_within = y_within * scale_factor
+        y_overall = y_overall * scale_factor
+
+    if y_mode == 'count':
+        # go.Bar 추가 (빈도수)
+        fig.add_trace(go.Bar(
+            x=bin_centers,
+            y=counts,
+            width=[bin_width] * len(bin_centers),
             name='데이터 분포 (빈도수)',
             marker=dict(color='#d1ecf1', line=dict(color='#0056b3', width=1.5)),
-            opacity=0.85
-        ), secondary_y=False)
-        
-        # 단기 (Within) 분포 추가 (확률 밀도, secondary_y=True)
-        y_within = stats.norm.pdf(x_eval, mean, sd_within) if sd_within > 0 else np.zeros_like(x_eval)
-        fig.add_trace(go.Scatter(
-            x=x_eval,
-            y=y_within,
-            mode='lines',
-            name='단기 (Within) 분포',
-            line=dict(color='red', width=2, dash='dash')
-        ), secondary_y=True)
-        
-        # 장기 (Overall) 분포 추가 (확률 밀도, secondary_y=True)
-        y_overall = stats.norm.pdf(x_eval, mean, sd_overall) if sd_overall > 0 else np.zeros_like(x_eval)
-        fig.add_trace(go.Scatter(
-            x=x_eval,
-            y=y_overall,
-            mode='lines',
-            name='장기 (Overall) 분포',
-            line=dict(color='#0056b3', width=2.5)
-        ), secondary_y=True)
-        
+            opacity=0.85,
+            text=[str(c) if c > 0 else "" for c in counts],
+            textposition='outside',
+            textfont=dict(size=9, color='#555555'),
+            customdata=np.vstack((bin_edges[:-1], bin_edges[1:], counts)).T,
+            hovertemplate="계급 구간: [%{customdata[0]:.4f}, %{customdata[1]:.4f})<br>빈도수: %{customdata[2]:d}<extra></extra>"
+        ))
     else:
-        # 확률 밀도 기준: 기존 단일 Y축 구성
-        fig = go.Figure()
+        # 확률 밀도 계산
+        density, _ = np.histogram(data, bins=bin_edges, density=True)
         
-        # 히스토그램 플로팅 (확률 밀도)
-        fig.add_trace(go.Histogram(
-            x=data,
-            histnorm='probability density',
-            nbinsx=bins_val,
+        # go.Bar 추가 (확률 밀도)
+        fig.add_trace(go.Bar(
+            x=bin_centers,
+            y=density,
+            width=[bin_width] * len(bin_centers),
             name='데이터 분포 (확률밀도)',
             marker=dict(color='#d1ecf1', line=dict(color='#0056b3', width=1.5)),
-            opacity=0.85
+            opacity=0.85,
+            text=[f"{d:.2f}" if d > 0 else "" for d in density],
+            textposition='outside',
+            textfont=dict(size=9, color='#555555'),
+            customdata=np.vstack((bin_edges[:-1], bin_edges[1:], counts)).T,
+            hovertemplate="계급 구간: [%{customdata[0]:.4f}, %{customdata[1]:.4f})<br>밀도: %{y:.4f}<br>빈도수: %{customdata[2]:d}<extra></extra>"
         ))
         
-        # 단기 (Within) 분포 추가
-        y_within = stats.norm.pdf(x_eval, mean, sd_within) if sd_within > 0 else np.zeros_like(x_eval)
-        fig.add_trace(go.Scatter(
-            x=x_eval,
-            y=y_within,
-            mode='lines',
-            name='단기 (Within) 분포',
-            line=dict(color='red', width=2, dash='dash')
-        ))
-        
-        # 장기 (Overall) 분포 추가
-        y_overall = stats.norm.pdf(x_eval, mean, sd_overall) if sd_overall > 0 else np.zeros_like(x_eval)
-        fig.add_trace(go.Scatter(
-            x=x_eval,
-            y=y_overall,
-            mode='lines',
-            name='장기 (Overall) 분포',
-            line=dict(color='#0056b3', width=2.5)
-        ))
+    # 단기 및 장기 분포 곡선 추가
+    fig.add_trace(go.Scatter(
+        x=x_eval,
+        y=y_within,
+        mode='lines',
+        name='단기 (Within) 분포',
+        line=dict(color='#fd7e14', width=2, dash='dash')
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=x_eval,
+        y=y_overall,
+        mode='lines',
+        name='장기 (Overall) 분포',
+        line=dict(color='#0056b3', width=2.5)
+    ))
 
-    # LSL, USL, Target 수직 가이드라인 추가
+    # LSL, USL, Target 수직 가이드라인 추가 (텍스트 가로로 변경 및 그래프 상단 외부 배치)
     fig.add_vline(x=lsl, line_dash="dash", line_color="#dc3545", line_width=1.5,
-                  annotation=dict(text=f"LSL ({lsl})", font=dict(color="#dc3545", size=10), textangle=-90, yshift=30))
+                  annotation=dict(text=f"LSL\n({lsl})", font=dict(color="#dc3545", size=10), 
+                                  yref="paper", y=1.01, yanchor="bottom", textangle=0))
     fig.add_vline(x=usl, line_dash="dash", line_color="#dc3545", line_width=1.5,
-                  annotation=dict(text=f"USL ({usl})", font=dict(color="#dc3545", size=10), textangle=-90, yshift=30))
+                  annotation=dict(text=f"USL\n({usl})", font=dict(color="#dc3545", size=10), 
+                                  yref="paper", y=1.01, yanchor="bottom", textangle=0))
     
     if target is not None:
         fig.add_vline(x=target, line_color="#28a745", line_width=1.5,
-                      annotation=dict(text=f"Target ({target})", font=dict(color="#28a745", size=10), textangle=-90, yshift=-30))
+                      annotation=dict(text=f"Target\n({target})", font=dict(color="#28a745", size=10), 
+                                      yref="paper", y=1.01, yanchor="bottom", textangle=0))
 
     fig.update_layout(
         title="공정 능력 히스토그램 & 정규분포 적합 곡선",
         title_x=0.5,
         xaxis_title="측정 치수",
-        xaxis=dict(range=x_range),
+        xaxis=dict(
+            range=x_range,
+            tickmode='array',
+            tickvals=list(bin_edges),
+            ticks='outside',
+            ticklen=12,
+            tickcolor='red',
+            tickwidth=2,
+            tickangle=-45
+        ),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         height=500,
-        margin=dict(l=40, r=40, t=80, b=40),
-        bargap=0.03 # 막대 간의 구분을 위해 미세한 간격 추가
+        margin=dict(l=40, r=40, t=80, b=60),
+        bargap=0.03
     )
 
     if y_mode == 'count':
-        fig.update_yaxes(title_text="계급별 표본수 (Frequency Count)", secondary_y=False)
-        fig.update_yaxes(title_text="확률 밀도 (Density)", secondary_y=True)
+        fig.update_layout(yaxis_title="계급별 표본수 (Frequency Count)")
     else:
         fig.update_layout(yaxis_title="확률 밀도 (Density)")
 
@@ -780,8 +818,11 @@ def update_threshold_table_labels(vg, g, f, p):
 
 # --- 콜백: 계급 구간 설정 모드에 따른 인풋 활성화/비활성화 처리 ---
 @dash.callback(
-    Output('capa-bin-count', 'disabled'),
+    [Output('capa-bin-min', 'disabled'),
+     Output('capa-bin-max', 'disabled'),
+     Output('capa-bin-count', 'disabled')],
     Input('capa-bin-mode', 'value')
 )
 def toggle_bin_inputs(mode):
-    return mode == 'auto'
+    is_disabled = (mode == 'auto')
+    return is_disabled, is_disabled, is_disabled
